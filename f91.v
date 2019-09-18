@@ -54,6 +54,8 @@ Section F91.
 
 End F91.
 
+Extract Inductive bool => "bool" [ "true" "false" ].
+
 Extraction f91_sem.
 
 Section f91_via_simulated_induction_recursion.
@@ -243,7 +245,8 @@ Section f91_termination_and_correctness.
       apply d91_1 with D1; auto.
       apply IH.
       generalize (f91_partially_correct D1); intros S.
-      red in S; lia.
+      red in S.
+      lia.
     + apply d91_0; auto.
   Qed.
 
