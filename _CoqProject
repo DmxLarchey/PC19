@@ -16,4 +16,5 @@ dfs_acc.v
 th_acc.v
 th_bar.v
 c_eps.v
+nm.v
 
