@@ -56,7 +56,7 @@ End F91.
 
 Extract Inductive bool => "bool" [ "true" "false" ].
 
-Extraction f91_sem.
+Recursive Extraction f91_sem.
 
 Section f91_via_simulated_induction_recursion.
 
@@ -114,22 +114,22 @@ Section f91_via_simulated_induction_recursion.
 
   Section f91.
 
-    Let f91_full : forall x, d91 x -> sig (g91 x).
-    Proof.
-      refine (fix loop n Hn { struct Hn } := 
+    Let f91_full : forall n, d91 n -> sig (g91 n).
+      refine (fix loop n Dn { struct Dn } := 
         match 100 <? n as r return 100 <? n = r -> _ with 
-          | true  => fun H => exist _ (n-10) _  
-          | false => fun H => let (f1,H1) := @loop (n+11) _ in
+          | true  => fun E => exist _ (n-10) _  
+          | false => fun E => let (f1,H1) := @loop (n+11) _ in
                               let (f2,H2) := @loop f1 _
                               in   exist _ f2 _
-        end eq_refl); simpl ltb in H.
-      2,3: inversion Hn; auto; exfalso; lia.
+        end eq_refl); simpl ltb in E.
+    Proof.
+      2,3: inversion Dn; auto; exfalso; lia.
       + constructor; auto.
       + constructor 2 with f1; auto.
     Qed.
 
-    Definition f91 x D := proj1_sig (@f91_full x D).
-    Local Fact f91_spec x D : g91 x (@f91 x D).
+    Definition f91 n D := proj1_sig (@f91_full n D).
+    Local Fact f91_spec n D : g91 n (@f91 n D).
     Proof. apply (proj2_sig _). Qed.
 
   End f91.
@@ -158,10 +158,10 @@ Section f91_via_simulated_induction_recursion.
   
   Fact d91_1 n : n <= 100 -> forall D, d91 (@f91 (n+11) D) -> d91 n.
   Proof.
-    intros H D HD.
+    intros H D1 D2.
     constructor 2; auto.
     intros x Hx.
-    rewrite (g91_fun Hx (f91_spec D)); trivial.
+    rewrite (g91_fun Hx (f91_spec D1)); trivial.
   Qed.
 
   (* The induction/recursion principle *)
