@@ -54,7 +54,7 @@ Section iter0.
       end eq_refl).
       1-2: cycle 1.
       + destruct H; trivial; discriminate.
-      + constructor 1.
+      + subst; constructor 1.
       + subst; constructor 2; auto.
     Defined.
 
