@@ -7,7 +7,7 @@
 (*         CeCILL v2 FREE SOFTWARE LICENSE AGREEMENT          *)
 (**************************************************************)
 
-Require Import List Permutation Arith Omega Extraction.
+Require Import List Permutation Arith Lia Extraction.
 
 Require Import measure_ind list_utils perm_utils sorted.
 
@@ -34,12 +34,15 @@ Section merge.
         end
       end eq_refl
     end eq_refl); auto.
-    1-2,5 : cycle 1.
+    1-3,5-6: cycle 1.
+    1-3: cycle 2.
 
-    1,2: subst; simpl; omega.
+    1-2: subst; simpl; lia.
+
+    + revert Hl; subst; apply sorted_inv_sorted; auto.
+    + subst; rewrite sorted_cons in Hm; tauto.
 
     + rewrite <- app_nil_end; subst; simpl; auto.
-    + revert Hl; subst; apply sorted_inv_sorted; auto.
     + destruct G as [ G1 G2 ]; split.
       * simpl; apply perm_cons; subst; auto.
       * apply sorted_cons; auto; split; auto.
@@ -52,7 +55,6 @@ Section merge.
         repeat split; try tauto.
         apply proj2 in Hm.
         revert Hm; apply lb_mono; auto.
-    + subst; rewrite sorted_cons in Hm; tauto.
     + destruct G as [ G1 G2 ]; split.
       * simpl.
         apply perm_trans with (1 := perm_cons _ G1); subst; simpl.

@@ -38,7 +38,8 @@ Section measure_rect.
 
   Let Fix_F : forall x : X, Acc R x -> P x.
   Proof.
-    refine (fix Fix_F x (H : Acc R x) { struct H } := 
+    refine(
+      fix Fix_F x (H : Acc R x) { struct H } := 
          F x (fun x' (H' : R x' x) => Fix_F x' _)
     ).
     destruct H as [ G ].
@@ -113,12 +114,11 @@ Section measure_double_rect.
     Theorem measure_double_rect_paired x y : P x y.
     Proof.
       change (Q (x,y)).
-      generalize (x,y); clear x y.
-      intros c; apply Fix_F with (R := R).
-      + intros (x,y) H. 
-        apply F. 
-        intros ? ?; apply (@H (_,_)).
-      + apply Rwf.
+      generalize (x,y); clear x y; intros c.
+
+      induction on c as IH with measure (m' c).
+      destruct c as (x,y); apply F.
+      intros ? ?; apply (IH (_,_)). 
     Defined.
 
   End measure_double_rect_paired.

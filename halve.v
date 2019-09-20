@@ -27,7 +27,7 @@ Section halve.
 
   Fixpoint halve_spec m : let (l,r) := halve m 
                       in m ~p l++r 
-                      /\ length r <= length l <= 1 + length r. 
+                      /\ length r <= length l <= 1 + length r.
   Proof.
     destruct m as [ | x [ | y m ] ]; simpl.
     + split; auto; constructor.
