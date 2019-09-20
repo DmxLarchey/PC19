@@ -1,6 +1,14 @@
 -R . PC19
 -install none
 
+utils/list_app.v
+utils/list_forall.v
+utils/list_in.v
+utils/list_rev.v
+utils/list_utils.v
+utils/perm_utils.v
+utils/sorted.v
+
 acc_irr.v
 measure_ind.v
 php.v
@@ -10,6 +18,11 @@ wf_lex.v
 
 false_elim.v
 itl.v
+
+halve.v
+merge.v
+mergesort.v
+
 iter0.v
 f91.v
 dfs_acc.v

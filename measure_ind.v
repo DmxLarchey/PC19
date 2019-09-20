@@ -25,6 +25,8 @@ Section measure_rect.
 
   Print Acc.
 
+  (** R is WF when all elements are accessible *)
+
   Let Rwf : forall x : X, Acc R x.
   Proof.
     apply wf_inverse_image with (f := m), lt_wf.
@@ -37,12 +39,14 @@ Section measure_rect.
   Let Fix_F : forall x : X, Acc R x -> P x.
   Proof.
     refine (fix Fix_F x (H : Acc R x) { struct H } := 
-         F x (fun x' H' => Fix_F x' _)
+         F x (fun x' (H' : R x' x) => Fix_F x' _)
     ).
-    destruct H as [ H ]; unfold R in H at 1.
-    apply H. (* structural decrease here *)
+    destruct H as [ G ].
+    apply G. (* structural decrease here *)
     trivial. 
   Defined.
+
+  Print Fix_F.
 
   (** Acc_inv is precisely implemented by destruct, ie pattern matching *)
 

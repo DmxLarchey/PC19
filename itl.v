@@ -76,7 +76,8 @@ Section interleave.
     Definition itl l m : list X.
     Proof.
       induction on l m as itl with measure (length l + length m).
-      revert itl; refine (match l with
+      revert itl. 
+      refine (match l with
         | nil  => fun _   => m
         | x::l => fun itl => x::itl m l _
       end).
@@ -151,14 +152,14 @@ Section interleave.
     Local Definition itl_full l m : { k | k = itl_s l m }.
     Proof.
       induction on l m as loop with measure (length l + length m).
-      revert loop; refine (match l with
+      revert loop. 
+      refine (match l with
         | nil  => fun _    => exist _ m _
         | x::l => fun loop => let (k,Hk) := loop m l _
                               in  exist _ (x::k) _ 
       end).
-      1,2: cycle 1.
-      + simpl; lia.
       + rewrite itl_s_fix0; trivial.
+      + simpl; lia.
       + rewrite Hk, itl_s_fix1; trivial.
     Defined.
 
@@ -171,72 +172,78 @@ Section interleave.
 
   End interleave_measure_full.
 
-  Section interleave_without_knowledge_of_semantics.
-
-    (** We implement interleave without knowledge of semantics 
-        and show correctness afterwards *)
-
-    (** We use the graph (an always definable relation) to specify
-        the algorithm *)
-
-    Inductive itl_graph : list X -> list X -> list X -> Prop := 
-      | in_itl_g0 : forall m, itl_graph nil m m
-      | in_itl_g1 : forall x l m r, itl_graph m l r -> itl_graph (x::l) m (x::r).
-
-    (** The graph is a functional relation by combined induction/inversion *)
-
-    Fact itl_graph_fun l m r1 r2 : itl_graph l m r1 -> itl_graph l m r2 -> r1 = r2.
-    Proof.
-      intros H1; revert H1 r2.
-      induction 1; inversion 1; f_equal; auto.
-    Qed.
-
-    (** We use more proving style for this the code.
-        Thus is just to show that programming with tactics 
-        is just fine *)
-
-    Local Definition itl_g_full l m : { k | itl_graph l m k }.
-    Proof.
-      induction on l m as loop with measure (length l + length m).
-      destruct l as [ | x l ].
-      + exists m; constructor.
-      + refine (let (k,Hk) := loop m l _ in _). 
-        (* destruct (loop m l) instead of 
-           refine would introduce a 
-           parasitic "let in" the extracted code *)
-        * simpl; lia.
-        * exists (x::k).
-          constructor; trivial.
-    Defined.
-
-    Extraction Inline itl_g_full.
-
-    Definition itl_g l m := proj1_sig (itl_g_full l m).
-    
-    Fact itl_g_spec l m : itl_graph l m (itl_g l m).
-    Proof. apply (proj2_sig _). Qed.
-
-    (** We can show correctness after the definition using the graph *)
-
-    Lemma itl_s_g_eq l m : itl_g l m = itl_s l m.
-    Proof. 
-      apply itl_graph_fun with l m.
-      * apply itl_g_spec.
-      * induction on l m as IH with measure (length l + length m).
-        destruct l as [ | x l ].
-        + rewrite itl_s_fix0; constructor.
-        + rewrite itl_s_fix1; constructor.
-          apply IH; simpl; lia.
-    Qed.
-
-  End interleave_without_knowledge_of_semantics.
-
 End interleave.
 
 Extract Inductive prod => "(*)"  [ "(,)" ].
 Extract Inductive list => "list" [ "[]" "(::)" ].
 
-Recursive Extraction itl_s itl itl_paired itl_f itl_g.
+Recursive Extraction itl_s itl itl_paired itl_f.
+
+Section interleave_without_knowledge_of_semantics.
+
+  Variable X : Type.
+
+  Implicit Type l m : list X.
+
+  (** We implement interleave without knowledge of semantics 
+      and show correctness afterwards *)
+
+  (** We use the graph (an always definable relation) to specify
+      the algorithm *)
+
+  Inductive itl_graph : list X -> list X -> list X -> Prop := 
+    | in_itl_g0 : forall m, itl_graph nil m m
+    | in_itl_g1 : forall x l m r, itl_graph m l r -> itl_graph (x::l) m (x::r).
+
+  (** The graph is a functional relation by combined induction/inversion *)
+
+  Fact itl_graph_fun l m r1 r2 : itl_graph l m r1 -> itl_graph l m r2 -> r1 = r2.
+  Proof.
+    intros H1; revert H1 r2.
+    induction 1; inversion 1; f_equal; auto.
+  Qed.
+
+  (** We use more proving style for this the code.
+      Thus is just to show that programming with tactics 
+      is just fine *)
+
+  Local Definition itl_g_full l m : { k | itl_graph l m k }.
+  Proof.
+    induction on l m as loop with measure (length l + length m).
+    destruct l as [ | x l ].
+    + exists m; constructor.
+    + refine (let (k,Hk) := loop m l _ in _). 
+      (* destruct (loop m l) instead of 
+         refine would introduce a 
+         parasitic "let in" the extracted code *)
+      * simpl; lia.
+      * exists (x::k).
+        constructor; trivial.
+  Defined.
+
+  Extraction Inline itl_g_full.
+
+  Definition itl_g l m := proj1_sig (itl_g_full l m).
+    
+  Fact itl_g_spec l m : itl_graph l m (itl_g l m).
+  Proof. apply (proj2_sig _). Qed.
+
+  (** We can show correctness after the definition using the graph *)
+
+  Lemma itl_s_g_eq l m : itl_g l m = itl_s l m.
+  Proof. 
+    apply itl_graph_fun with l m.
+    * apply itl_g_spec.
+    * induction on l m as IH with measure (length l + length m).
+      destruct l as [ | x l ].
+      + rewrite itl_s_fix0; constructor.
+      + rewrite itl_s_fix1; constructor.
+        apply IH; simpl; lia.
+  Qed.
+
+End interleave_without_knowledge_of_semantics.
+
+Recursive Extraction itl_g.
 
      
 
