@@ -7,7 +7,7 @@
 (*         CeCILL v2 FREE SOFTWARE LICENSE AGREEMENT          *)
 (**************************************************************)
 
-Require Import List Permutation Arith Omega Extraction.
+Require Import List Permutation Arith Lia Extraction.
 
 Require Import measure_ind list_utils perm_utils sorted halve merge.
 
@@ -36,13 +36,14 @@ Section merge_sort.
               in  exist _ k _
               end eq_refl
             end eq_refl); subst; destruct Hp as (H1 & H2); try tauto.
+      1-3: cycle 1.
+      + apply Permutation_length in H1.
+        rewrite app_length in H1; simpl in *; lia.
+      + apply Permutation_length in H1.
+        rewrite app_length in H1; simpl in *; lia.
       + destruct m as [ | x [ | y m ] ]; auto.
         rewrite <- app_nil_end in H1.
-        apply Permutation_length in H1; simpl in *; exfalso; omega.
-      + apply Permutation_length in H1.
-        rewrite app_length in H1; simpl in *; omega.
-      + apply Permutation_length in H1.
-        rewrite app_length in H1; simpl in *; omega.
+        apply Permutation_length in H1; simpl in *; exfalso; lia.
       + split; try tauto.
         apply proj1 in G.
         apply proj1 in G1.
@@ -59,7 +60,7 @@ Section merge_sort.
 
   End non_tail_rec.
 
-  Section tail_rec.
+  Section with_tail_rec.
 
     Let merge_sort_tail_full m : { k | m ~p k /\ sorted R k }.
     Proof.
@@ -80,10 +81,10 @@ Section merge_sort.
         end eq_refl); subst; auto; try tauto; destruct Hp as (H1 & H2).
       + apply Permutation_length in H1.
         rewrite app_length in H1.
-        rewrite H1; simpl in H1 |- *; omega.
+        rewrite H1; simpl in H1 |- *; lia.
       + apply Permutation_length in H1.
         rewrite app_length in H1.
-        rewrite H1; simpl in H1 |- *; omega.
+        rewrite H1; simpl in H1 |- *; lia.
       + clear loop l0 H2.
         destruct G1 as (G1 & G2).
         destruct G3 as (G3 & G4).
@@ -99,7 +100,7 @@ Section merge_sort.
     Fact merge_sort_tail_correct : sorting_algo R merge_sort_tail.
     Proof. intro; unfold merge_sort_tail; apply (@proj2_sig _). Qed.
 
-  End tail_rec.
+  End with_tail_rec.
 
 End merge_sort.
 
@@ -107,7 +108,9 @@ Extract Inductive list => "list" [ "[]" "(::)" ].
 Extract Inductive prod => "(*)"  [ "(,)" ].
 Extract Inductive sumbool => "bool" [ "true" "false" ]. 
 
-Recursive Extraction merge_sort merge_sort_tail.
+Recursive Extraction merge_sort.
+
+Recursive Extraction merge_sort_tail.
 
 
 
