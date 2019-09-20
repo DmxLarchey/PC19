@@ -41,25 +41,41 @@ Section Decidable_Minimization.
 
   Section Constructive_Epsilon.
 
-    Let Fixpoint loop n (Hn : bar n) : { x | P x }.
+    Let Fixpoint loop n (Hn : bar n) : { i | (* n <= i /\ *) P i }.
     Proof.
-      refine (match P_dec n with
-        | left H  => exist _ n _
-        | right H => let (m,Hm) := loop (S n) _
-                     in  exist _ m _
-      end).
-      1,3: trivial.
+      refine (
+        match P_dec n with
+          | left H  => exist _ n _
+          | right H => let (m,Hm) := loop (S n) _
+                       in  exist _ m _
+        end); try tauto.
       inversion Hn.
-      + destruct H; assumption. 
-      + assumption.
-    Defined.
+      * destruct H; assumption. 
+      * assumption.
+    Qed.
 
     Print loop.
 
+(*
+
+    Fact bar_eq_domain n : bar n <-> exists i, n <= i /\ P i.
+    Proof.
+      split.
+      + intros Hn.
+        destruct (@loop n Hn) as (i & Hi).
+        exists i; auto.
+      + apply exists_bar.
+    Qed.
+
+*)
+
     Definition constructive_epsilon : (exists x, P x) -> { x | P x }.
     Proof.
-      intros; apply loop with 0, exists_bar. 
-      destruct H as (i & Hi); exists i; split; auto; lia.
+      intros H. 
+      refine (let (x,Hx) := @loop 0 _  in  exist _ x _ ).
+      + apply exists_bar. 
+        destruct H as (i & Hi); exists i; split; auto; lia.
+      + tauto.
     Defined.
 
   End Constructive_Epsilon.
@@ -81,7 +97,7 @@ Section Decidable_Minimization.
         destruct (eq_nat_dec i n).
         + subst; tauto.
         + apply H2 in Hi; lia.
-    Defined.
+    Qed.
 
     Definition unb_dec_min : ex P -> { m | P m /\ forall i, P i -> m <= i }.
     Proof.

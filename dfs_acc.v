@@ -167,11 +167,13 @@ Section dfs.
     Proof.
       refine (fix loop v l Dvl { struct Dvl } := 
         match l as l' return d_dfs v l' -> sig (g_dfs v l') with
-          | nil   => fun _ =>                                            exist _ v _
+          | nil   => fun _ =>       exist _ v _
           | x::l' => fun D => let (b,Hb) := In_bool eqX_bool x v 
                               in match b as b' return b = b' -> _ with 
-            | true  => fun E => let (m,Hm) := loop v l' _                   in  exist _ m _
-            | false => fun E => let (m,Hm) := loop (x::v) (succs x ++ l') _ in  exist _ m _
+            | true  => fun E => let (m,Hm) := loop v l' _                   
+                                in  exist _ m _
+            | false => fun E => let (m,Hm) := loop (x::v) (succs x ++ l') _ 
+                                in  exist _ m _
           end eq_refl
         end Dvl); subst.
       3,4: cycle 1.
@@ -305,27 +307,6 @@ Section dfs.
                            = dfs (x::v) (succs x++l) D.
   Proof. apply g_dfs_fun with v (x::l); [ | constructor 3; auto ]; apply dfs_spec. Qed.
 
-  Section d_dfs_ind.
-  
-    (* We can retrieve an non-dependent induction principle for dfs 
-       which is very similar to the induction principle of g_dfs *)
-  
-    Variables (P : list X -> list X -> list X -> Prop)
-              (HP1 : forall v, P v nil v)
-              (HP2 : forall v x l r,   In x v -> P v l r -> P v (x::l) r)
-              (HP3 : forall v x l r, ~ In x v -> P (x::v) (succs x ++ l) r -> P v (x::l) r).
-
-    Theorem d_dfs_ind v l D : P v l (dfs v l D).
-    Proof.
-      induction D as [ v l D1 D2 | | | ] using d_dfs_rect.
-      rewrite (dfs_pirr _ D1); auto.
-      rewrite dfs_fix_0; auto.
-      rewrite dfs_fix_1; auto.
-      rewrite dfs_fix_2; auto.
-    Qed.
- 
-  End d_dfs_ind.
-
   (****************************************************
        Specification of g_dfs/dfs by IR is finished
    ****************************************************)
@@ -348,24 +329,32 @@ Section dfs.
   Theorem dfs_invariant v l D : dfs_invariant_t v l (dfs v l D)
                    /\ forall i, dfs_invariant_t v l i -> incl (dfs v l D) i.
   Proof.
-    pattern v, l, (dfs v l D); revert v l D; apply d_dfs_ind;
-      [ intros v | intros v x l H1 D ID1 | intros v x l H1 D ID1 ];
-      unfold dfs_invariant_t in * |- *; unfold incl in *.
+    induction D as [ v l D1 D2 ID1 
+                   | v 
+                   | v x l H1 D ID
+                   | v x l H1 D ID ] using d_dfs_rect.
+    2-4 : unfold dfs_invariant_t in * |- *; unfold incl in *.
+ 
+    (* the predicate is proof irrelevant *)
+
+    + rewrite (dfs_pirr _ D1); trivial.
 
     (* first constructor for dfs _ nil *)
 
-    + simpl; tauto.
+    + rewrite dfs_fix_0; simpl; tauto.
     
     (* second constructor for dfs v (x::_) where x ∈ v *) 
 
-    + destruct ID1 as ((H2 & H3 & H4) & H5).
+    + rewrite dfs_fix_1.
+      destruct ID as ((H2 & H3 & H4) & H5).
       repeat split; simpl; try tauto.
       * intros y [ [] | ? ]; auto.
       * intros ? (? & ? & ?); apply H5; auto.
  
     (* third constructor for dfs v (x::_) where x ∉ v *) 
 
-    + destruct ID1 as ((H2 & H3 & H4) & H5).
+    + rewrite dfs_fix_2.
+      destruct ID as ((H2 & H3 & H4) & H5).
       repeat split; auto.
       * intros y Hy; apply H2; right; auto.
       * intros y [ | ]; subst.
@@ -393,15 +382,15 @@ Section dfs.
   Proof.
     induction D as [ v l D1 D2 
                    | v 
-                   | v x l H1 D ID1 
-                   | v x l H1 D ID1 ] using d_dfs_rect.
+                   | v x l H1 D ID 
+                   | v x l H1 D ID ] using d_dfs_rect.
 
     * rewrite (dfs_pirr _ D1); auto.
     * rewrite dfs_fix_0; auto.
     * rewrite dfs_fix_1; auto.
     * rewrite dfs_fix_2.
-      intros H; specialize (ID1 H).
-      apply list_has_dup_cons_inv in ID1; tauto.
+      intros H; specialize (ID H).
+      apply list_has_dup_cons_inv in ID; tauto.
   Qed.
 
   (* Hence dfs v l cannot terminate unless such a finite invariant exists

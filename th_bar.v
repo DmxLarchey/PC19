@@ -26,8 +26,6 @@ Set Implicit Arguments.
 
 Fixpoint iter X (f : X -> X) n x := match n with 0 => x | S n => iter f n (f x) end.
 
-
-
 Section with_constructive_epsilon.
   Variable (X : Type) 
            (eqX_dec : forall x y : X, { x = y } + { x <> y })
@@ -156,4 +154,5 @@ Section Tortoise_Hare.
 
 End Tortoise_Hare.
 
-Recursive Extraction th th_tail.
+Recursive Extraction th.
+Recursive Extraction th_tail.
