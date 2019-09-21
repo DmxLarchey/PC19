@@ -41,17 +41,19 @@ Section Decidable_Minimization.
 
   Section Constructive_Epsilon.
 
-    Let Fixpoint loop n (Hn : bar n) : { i | (* n <= i /\ *) P i }.
+    Let Fixpoint loop n (Hn : bar n) : { i | P i }.
     Proof.
       refine (
         match P_dec n with
           | left H  => exist _ n _
           | right H => let (m,Hm) := loop (S n) _
                        in  exist _ m _
-        end); try tauto.
-      inversion Hn.
-      * destruct H; assumption. 
-      * assumption.
+        end).
+      + trivial.
+      + inversion Hn.
+        * destruct H; assumption.
+        * assumption.
+      + trivial.
     Qed.
 
     Print loop.
