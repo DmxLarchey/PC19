@@ -2,28 +2,17 @@ Require Import Arith Nat Lia List Extraction.
 
 Set Implicit Arguments.
 
-Section snoc_ind.
-
-  Variable (X : Type) (P : list X -> Type).
-
-  Hypothesis HP0 : P nil.
-  Hypothesis HP1 : forall l x, P l -> P (l++x::nil).
-
-  Definition list_snoc_rect l : P l.
-  Proof.
-    rewrite <- (rev_involutive l).
-    set (Q l := P (rev l)).
-    change (Q (rev l)).
-    generalize (rev l).
-    clear l; intros l.
-    unfold Q; clear Q.
-
-    induction l as [ | x l IHl ].
-    + apply HP0.
-    + simpl; apply HP1; auto.
-  Qed.
-
-End snoc_ind.
+Fixpoint list_snoc_rect {X:Type} (P:list X -> Type)
+     (HP0 : P nil) 
+     (HP1 : forall l x,  P l -> P (l++x::nil))
+     l : P l.
+Proof.
+  destruct l as [ | x l ].
+  + apply HP0.
+  + apply list_snoc_rect with (P := fun l => P (x::l)) (l := l).
+    * apply (HP1 nil), HP0.
+    * intros; apply (HP1 (x::_)); auto.
+Qed.
  
 Inductive pos3 := ZZ | OO | TT.
 
