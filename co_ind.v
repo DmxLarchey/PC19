@@ -1,4 +1,4 @@
-Require Import Arith Nat Lia List.
+Require Import Arith Nat Lia List Extraction.
 
 Set Implicit Arguments.
 
@@ -236,6 +236,8 @@ Proof.
     rewrite prefix_length; lia.
 Qed.
 
+Recursive Extraction stream_choose.
+
 Section on_the_fly_update.
 
   Variable f : pos3 * pos3 * pos3 -> pos3 * pos3 * pos3.
@@ -243,11 +245,15 @@ Section on_the_fly_update.
   CoFixpoint otf_update s := 
     match s with lcons a (lcons b (lcons c s)) => 
       match f (a,b,c) with
-        | (x,y,z) =>  lcons x (otf_update (lcons b (lcons c s)))
+        | (x,y,z) =>  lcons x (otf_update (lcons y (lcons z s)))
       end
     end.
 
 End on_the_fly_update.
+
+Recursive Extraction otf_update.
+
+
 
 
 
