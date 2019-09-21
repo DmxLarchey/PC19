@@ -171,7 +171,7 @@ Proof.
   apply Nat.pow_le_mono_r_iff; simpl; lia.
 Qed.
 
-Eval compute in N (prefix 8 (lcst TT)).
+Eval compute in N (prefix 3 (lcst TT)).
 
 Fact N_ZZZ n : N (prefix n (lcst ZZ)) = 1.
 Proof.
@@ -235,3 +235,20 @@ Proof.
     generalize (N_TT (prefix a s)).
     rewrite prefix_length; lia.
 Qed.
+
+Section on_the_fly_update.
+
+  Variable f : pos3 * pos3 * pos3 -> pos3 * pos3 * pos3.
+
+  CoFixpoint otf_update s := 
+    match s with lcons a (lcons b (lcons c s)) => 
+      match f (a,b,c) with
+        | (x,y,z) =>  lcons x (otf_update (lcons b (lcons c s)))
+      end
+    end.
+
+End on_the_fly_update.
+
+
+
+
