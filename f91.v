@@ -27,20 +27,21 @@ Section F91.
 
   (** This definition of f91 assumes the knowledge of the semantics *)
 
-  Definition sem91 m p := 100 < m /\ p = m - 10 \/ m <= 100 /\ p = 91.
+  Definition sem91 n p := 100 < n /\ p = n - 10 
+                       \/ n <= 100 /\ p = 91.
 
   (** And also how to structure the domain inductively *)
 
-  Definition f91_sem_full m : { p | sem91 m p }.
+  Definition f91_sem_full n : { p | sem91 n p }.
   Proof.
-    induction on m as f91 with measure (101-m).
-    refine (match 100 <? m as r return 100 <? m = r -> _ with
+    induction on n as f91 with measure (101-n).
+    refine (match 100 <? n as b return 100 <? n = b -> _ with
       | false => fun E => 
-        let (r,Hr) := f91 (m+11) _ in 
-        let (n,Hn) := f91 r _ 
-        in exist _ n _
+        let (m,Hm) := f91 (n+11) _ in 
+        let (r,Hr) := f91 m _ 
+        in exist _ r _
       | true => fun E =>
-           exist _ (m-10) _
+           exist _ (n-10) _
     end eq_refl); unfold sem91 in *; simpl ltb in E; lia.
   Defined.
 
@@ -55,8 +56,9 @@ Section F91.
 End F91.
 
 Extract Inductive bool => "bool" [ "true" "false" ].
+(* Extract Inductive nat => int [ "0" "succ" ] "(fun fO fS n -> if n=0 then fO () else fS (n-1))". *)
 
-Recursive Extraction f91_sem.
+Extraction f91_sem.
 
 Section f91_via_simulated_induction_recursion.
 
@@ -75,7 +77,9 @@ Section f91_via_simulated_induction_recursion.
 
   Local Inductive g91 : nat -> nat -> Prop :=
     | in_g91_0 : forall n,        100 < n  -> g91 n (n-10)
-    | in_g91_1 : forall n fn11 r, n <= 100 -> g91 (n+11) fn11 -> g91 fn11 r -> g91 n r. 
+    | in_g91_1 : forall n fn11 r, n <= 100 -> g91 (n+11) fn11 
+                                           -> g91 fn11 r 
+                                           -> g91 n r. 
     
   Local Fact g91_fun x y1 y2 : g91 x y1 -> g91 x y2 -> y1 = y2.
   Proof.
@@ -114,7 +118,7 @@ Section f91_via_simulated_induction_recursion.
 
   Section f91.
 
-    Let f91_full : forall n, d91 n -> sig (g91 n).
+    Let f91_full : forall n, d91 n -> { r | g91 n r }.
       refine (fix loop n Dn { struct Dn } := 
         match 100 <? n as r return 100 <? n = r -> _ with 
           | true  => fun E => exist _ (n-10) _  
@@ -137,7 +141,7 @@ Section f91_via_simulated_induction_recursion.
   (* d91 is indeed an(other) inductive characterization of the 
      domain of g91. *)
 
-  Theorem d91_g91_eq n : d91 n <-> ex (g91 n).
+  Theorem d91_g91_eq n : d91 n <-> exists r, g91 n r.
   Proof.
     split.
     + intros Hn.
