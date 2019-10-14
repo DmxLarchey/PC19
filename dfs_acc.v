@@ -341,14 +341,17 @@ Section dfs.
 
     (* first constructor for dfs _ nil *)
 
-    + rewrite dfs_fix_0; simpl; tauto.
+    + rewrite dfs_fix_0; simpl. 
+      tauto.
     
     (* second constructor for dfs v (x::_) where x ∈ v *) 
 
     + rewrite dfs_fix_1.
       destruct ID as ((H2 & H3 & H4) & H5).
       repeat split; simpl; try tauto.
-      * intros y [ [] | ? ]; auto.
+      * intros y [ [] | ? ]. 
+        - auto.
+        - auto.
       * intros ? (? & ? & ?); apply H5; auto.
  
     (* third constructor for dfs v (x::_) where x ∉ v *) 
@@ -409,7 +412,8 @@ Section dfs.
       intros (i & H1 & H2 & H3).
       revert v H1 l H2 H3.
       (* Induction on v using upper-bounded strict inclusion as well-founded relation *)
-      induction v as [ v IHv ] using (well_founded_induction (wf_rincl_fin i)); intros Hv.
+      induction v as [ v IHv ] using (well_founded_induction (wf_rincl_fin i)). 
+      intros Hv.
       (* Structural induction on l *)
       induction l as [ | x l IHl ]; intros Hl H.
       * (* dfs v nil *)

@@ -134,7 +134,7 @@ Section merge_tail.
     end eq_refl); auto.
     1-3 : cycle 2.
     + unfold c in Ec.
-      destruct (cmp x y); inversion  Ec; subst; simpl; omega.
+      destruct (cmp x y); inversion  Ec; subst; simpl; lia.
     + split; subst k; simpl.
       * apply Permutation_app; auto.
         apply Permutation_sym, Permutation_rev.

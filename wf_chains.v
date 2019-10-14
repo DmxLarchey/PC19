@@ -21,8 +21,12 @@ Section wf_chains.
     
   Fact chain_plus a b x y z : chain a x y -> chain b y z -> chain (a+b) x z.
   Proof.
-    induction 1 as [ | ? ? y ]; simpl; auto.
-    constructor 2 with y; auto.
+    induction 1 as [ | ? ? y ].
+    + simpl; auto.
+    + intros. simpl. 
+      constructor 2 with y. 
+      * auto.
+      * auto.
   Qed.
 
   Fact chain_rev n x y z : chain n x y -> R y z -> chain (S n) x z.
@@ -38,12 +42,19 @@ Section wf_chains.
   
   Lemma Acc_chains k x : (forall n y, chain n y x -> n <= k) -> Acc R x.
   Proof.
-    revert x; induction k as [ | k IHk ]; intros x Hx.
+    revert x.
+    induction k as [ | k IHk ]; intros x Hx.
     + constructor 1; intros y Hy.
-      generalize (Hx _ _ (in_chain_1 Hy (in_chain_0 x))); lia.
+      assert (chain 1 y x) as C.
+      { constructor 2 with x.
+        + trivial.
+        + constructor 1. }
+      apply Hx in C; lia.
     + constructor 1; intros y Hy.
       apply IHk; intros n z Hn.
-      apply le_S_n, (Hx _ z), chain_rev with y; auto.
+      apply le_S_n. 
+      apply (Hx _ z). 
+      apply chain_rev with y; auto.
   Qed.
 
   (* If every x has bounded chains to itself then R is WF *)
