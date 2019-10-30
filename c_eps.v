@@ -26,7 +26,7 @@ Section Decidable_Minimization.
   Variable (P : nat -> Prop)
            (P_dec : forall n, { P n } + { ~ P n }).
 
-  Local Inductive bar n : Prop :=
+  Inductive bar n : Prop :=
     | in_bar_0 : P n -> bar n
     | in_bar_1 : bar (S n) -> bar n.
 

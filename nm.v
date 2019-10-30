@@ -57,7 +57,7 @@ Section nm_def.
 
   Reserved Notation "x '~~>' y" (at level 70, no associativity).
   
-  Local Inductive 𝔾 : Ω -> Ω -> Prop :=
+  Inductive 𝔾 : Ω -> Ω -> Prop :=
     | in_gnm_0 :           α ~~> α
 
     | in_gnm_1 y ny z nz :

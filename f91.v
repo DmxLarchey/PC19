@@ -75,7 +75,7 @@ Section f91_via_simulated_induction_recursion.
 
   *) 
 
-  Local Inductive g91 : nat -> nat -> Prop :=
+  Inductive g91 : nat -> nat -> Prop :=
     | in_g91_0 : forall n,        100 < n  -> g91 n (n-10)
     | in_g91_1 : forall n fn11 r, n <= 100 -> g91 (n+11) fn11 
                                            -> g91 fn11 r 
