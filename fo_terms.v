@@ -7,7 +7,7 @@
 (*         CeCILL v2 FREE SOFTWARE LICENSE AGREEMENT          *)
 (**************************************************************)
 
-Require Import List.
+Require Import List Arith.
 
 Require Import acc_irr.
 
@@ -483,11 +483,28 @@ Section fol.
 
     Hint Rewrite fot_sem_fix_0 fot_sem_fix_1 : fo_term_db.
 
+    Fact fot_sem_ext phi psy : (forall n, phi n = psy n)
+                            -> forall t, fot_sem phi t = fot_sem psy t.
+    Proof.
+      induction t; rew fot; f_equal; auto.
+      apply vec_map_ext; intros; auto.
+    Qed.
+
+    Fact fot_sem_subst phi f t : fot_sem phi (fo_term_subst f t) 
+                               = fot_sem (fun n => fot_sem phi (f n)) t.
+    Proof.
+      induction t; rew fot; f_equal; auto.
+      rewrite vec_map_map.
+      apply vec_map_ext; intros; auto.
+    Qed.
+
     Definition phi_lift phi x n :=
       match n with
         | 0   => x
         | S n => phi n
       end.
+
+    Arguments phi_lift phi x n /.
 
     Definition fol_bin_sem b :=
       match b with
@@ -498,21 +515,65 @@ Section fol.
 
     Arguments fol_bin_sem b /.
 
-    Definition fol_quant_sem q (f : X -> Prop) :=
+    Definition quant_sem K q (P : K -> Prop) :=
       match q with
-        | fol_ex => ex f
-        | fol_fa => forall x, f x 
+        | fol_ex => ex P
+        | fol_fa => forall x, P x 
       end.
 
-    Arguments fol_quant_sem q f /.
+    Arguments quant_sem K q P /.
+
+    Let quant_sem_equiv K (P Q : K -> Prop) : 
+              (forall k, P k <-> Q k) 
+            -> forall q, quant_sem q P <-> quant_sem q Q.
+    Proof.
+      intros H []; simpl.
+      + split; intros (k & ?); exists k; apply H; auto.
+      + split; intros ? k; apply H; auto. 
+    Qed.
 
     Fixpoint fol_sem phi A : Prop :=
       match A with
         | fol_false     => False
         | @fol_atom p v => sem_pred (vec_map (fot_sem phi) v)
         | fol_bin b A B => fol_bin_sem b (fol_sem phi A) (fol_sem phi B) 
-        | fol_quant q A => fol_quant_sem q (fun x => fol_sem (phi_lift phi x) A)
+        | fol_quant q A => quant_sem q (fun x => fol_sem (phi_lift phi x) A)
       end.
+
+    Fact fol_sem_ext phi psy : (forall n, phi n = psy n)
+                            -> forall A, fol_sem phi A <-> fol_sem psy A.
+    Proof.
+      intros H A; revert A phi psy H.
+      induction A as [ | p v | b A IHA B IHB | q A IHA ]; simpl; intros phi psy H; try tauto.
+      + match goal with | |- sem_pred ?x <-> sem_pred ?y => replace x with y; try tauto end.
+        apply vec_map_ext; intros; apply fot_sem_ext; auto.
+      + destruct b; rewrite (IHA _ _ H), (IHB _ _ H); tauto.
+      + destruct q.
+        * split; intros (x & Hx); exists x; revert Hx; apply IHA;
+            intros [ | n ]; simpl; auto.
+        * split; intros H1 x; generalize (H1 x); clear H1; apply IHA;
+           intros [ | n ]; simpl; auto.
+    Qed.
+
+    (** Semantics commutes with substitutions ... good *)
+
+    Theorem fol_sem_subst phi f A : fol_sem phi (fol_subst f A)
+                                <-> fol_sem (fun n => fot_sem phi (f n)) A.
+    Proof.
+      revert phi f; induction A as [ | p v | b A IHA B IHB | q A IHA ]; simpl; intros phi f; try tauto.
+      + match goal with | |- sem_pred ?x <-> sem_pred ?y => replace x with y; try tauto end.
+        rewrite vec_map_map; apply vec_map_ext.
+        intros; rewrite fot_sem_subst; auto.
+      + destruct b; rewrite (IHA phi f), (IHB phi f); tauto.
+      + apply quant_sem_equiv; intros x. 
+        rewrite IHA; apply fol_sem_ext; intros [ | n ].
+        - simpl; rew fot; simpl; auto.
+        - unfold fo_term_subst_lift.
+          rewrite <- fo_term_subst_map, fo_term_subst_comp.
+          rewrite fot_sem_subst; simpl; rew fot.
+          rewrite fot_sem_subst; apply fot_sem_ext.
+          intros; cbv; auto.
+    Qed.
 
   End semantics.
 
