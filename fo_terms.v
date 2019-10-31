@@ -108,6 +108,10 @@ Section vec_map.
 
 End vec_map.
 
+Fact vec_map_map X Y Z (f : X -> Y) (g : Y -> Z) n (v : vec _ n) :
+          vec_map g (vec_map f v) = vec_map (fun x => g (f x)) v.
+Proof. induction v; simpl; f_equal; auto. Qed. 
+
 Fixpoint vec_sum n (v : vec nat n) :=
   match v with 
     | vec_nil      => 0
@@ -374,6 +378,147 @@ Section fo_term_subst.
 
 End fo_term_subst.
 
+Opaque fo_term_map fo_term_subst.
 
-  
+Hint Rewrite fo_term_subst_fix_0 fo_term_subst_fix_1
+             fo_term_map_fix_0 fo_term_map_fix_1 : fo_term_db.
+
+Section fo_subst_comp.
+
+  Variables (sym : Set) (sym_ar : sym -> nat) (X Y Z : Set) 
+            (f : X -> fo_term Y sym_ar) 
+            (g : Y -> fo_term Z sym_ar).
+
+  Fact fo_term_subst_comp t :
+         fo_term_subst g (fo_term_subst f t)
+       = fo_term_subst (fun x => fo_term_subst g (f x)) t.
+  Proof.
+    induction t; rew fot; auto; rew fot.
+    rewrite vec_map_map; f_equal.
+    apply vec_map_ext; auto.
+  Qed.
+
+End fo_subst_comp.
+
+Section fol.
+
+  Variable (fol_sym : Set) (fol_sym_ar : fol_sym -> nat)
+           (fol_pred : Set) (fol_pred_ar : fol_pred -> nat). 
+
+  Inductive fol_bop := fol_conj | fol_disj | fol_imp.
+  Inductive fol_qop := fol_ex | fol_fa.
+
+  Inductive fol_form : Set :=
+    | fol_false : fol_form
+    | fol_atom  : forall p, vec (fo_term nat fol_sym_ar) (fol_pred_ar p) -> fol_form
+    | fol_bin   : fol_bop -> fol_form -> fol_form -> fol_form
+    | fol_quant : fol_qop -> fol_form -> fol_form.
+
+  Definition fo_term_subst_lift (f : nat -> fo_term nat fol_sym_ar) n :=
+    match n with 
+      | 0   => in_var 0
+      | S n => fo_term_map S (fo_term_subst f (in_var n))
+    end.
+
+  Arguments fo_term_subst_lift f n /.
+
+  Fixpoint fol_subst (f : nat -> fo_term nat fol_sym_ar) A :=
+    match A with
+      | fol_false     => fol_false
+      | @fol_atom p v => fol_atom (vec_map (fo_term_subst f) v)
+      | fol_bin c A B => fol_bin c (fol_subst f A) (fol_subst f B)
+      | fol_quant q A => fol_quant q (fol_subst (fo_term_subst_lift f) A) 
+    end.
+
+  Fact fol_subst_ext f g : (forall n, f n = g n) -> forall A, fol_subst f A = fol_subst g A.
+  Proof.
+    intros Hfg A; revert A f g Hfg. 
+    induction A as [ | p v | c A IHA B IHB | q A IHA ]; intros f g Hfg; simpl; f_equal; auto.
+    + apply vec_map_ext; intros; apply fo_term_subst_ext; intros; auto.
+    + apply IHA. intros [ | n ]; simpl; rew fot; f_equal; auto.
+  Qed.
+
+  (** This theorem is the important one that shows substitution do compose 
+      hence De Bruijn notation are handled correctly by substitutions *)
+
+  Fact fol_subst_comp f g A : fol_subst f (fol_subst g A) 
+                            = fol_subst (fun n => fo_term_subst f (g n)) A.
+  Proof.
+    revert f g; induction A as [ | p v | b A IHA B IHB | q A IHA ]; simpl; intros f g; auto.
+    + f_equal.
+      rewrite vec_map_map.
+      apply vec_map_ext.
+      intros; rew fot. rewrite fo_term_subst_comp.
+      apply fo_term_subst_ext.
+      intros; rew fot; auto.
+    + f_equal; auto.
+    + f_equal.
+      rewrite IHA; auto.
+      apply fol_subst_ext.
+      intros [ | n ]; rew fot; simpl; rew fot; simpl; auto.
+      do 2 rewrite <- fo_term_subst_map, fo_term_subst_comp.
+      apply fo_term_subst_ext.
+      intros; rew fot; rewrite fo_term_subst_map; simpl; rew fot; auto.
+  Qed.
+
+  Section semantics.
+
+    Variable (X : Type) (sem_sym  : forall s, vec X (fol_sym_ar s) -> X)
+                        (sem_pred : forall s, vec X (fol_pred_ar s) -> Prop).
+
+    Implicit Type phi : nat -> X.
+
+    Definition fot_sem phi : fo_term nat fol_sym_ar -> X.
+    Proof.
+      apply fo_term_recursion.
+      + exact phi.
+      + intros s _ w; exact (sem_sym w).
+    Defined.
+
+    Fact fot_sem_fix_0 phi n : fot_sem phi (in_var n) = phi n.
+    Proof. apply fo_term_recursion_fix_0. Qed.
+
+    Fact fot_sem_fix_1 phi s v : fot_sem phi (in_fot s v) = sem_sym (vec_map (fot_sem phi) v).
+    Proof. apply fo_term_recursion_fix_1. Qed.
+
+    Hint Rewrite fot_sem_fix_0 fot_sem_fix_1 : fo_term_db.
+
+    Definition phi_lift phi x n :=
+      match n with
+        | 0   => x
+        | S n => phi n
+      end.
+
+    Definition fol_bin_sem b :=
+      match b with
+        | fol_conj => and
+        | fol_disj => or
+        | fol_imp  => fun A B => A -> B
+      end.
+
+    Arguments fol_bin_sem b /.
+
+    Definition fol_quant_sem q (f : X -> Prop) :=
+      match q with
+        | fol_ex => ex f
+        | fol_fa => forall x, f x 
+      end.
+
+    Arguments fol_quant_sem q f /.
+
+    Fixpoint fol_sem phi A : Prop :=
+      match A with
+        | fol_false     => False
+        | @fol_atom p v => sem_pred (vec_map (fot_sem phi) v)
+        | fol_bin b A B => fol_bin_sem b (fol_sem phi A) (fol_sem phi B) 
+        | fol_quant q A => fol_quant_sem q (fun x => fol_sem (phi_lift phi x) A)
+      end.
+
+  End semantics.
+
+End fol.
+
+
+    
+
 
