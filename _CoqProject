@@ -31,5 +31,7 @@ th_bar.v
 c_eps.v
 nm.v
 
+fo_terms.v
+
 co_ind.v
 
