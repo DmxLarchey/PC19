@@ -15,6 +15,7 @@ php.v
 wf_chains.v
 wf_incl.v
 wf_lex.v
+wf_finite.v
 
 false_elim.v
 itl.v

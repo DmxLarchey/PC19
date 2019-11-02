@@ -7,7 +7,7 @@
 (*         CeCILL v2 FREE SOFTWARE LICENSE AGREEMENT          *)
 (**************************************************************)
 
-Require Import Arith Lia.
+Require Import Arith List Lia.
 
 Set Implicit Arguments.
 
@@ -18,7 +18,7 @@ Section wf_chains.
   Inductive chain : nat -> X -> X -> Prop :=
     | in_chain_0 : forall x, chain 0 x x
     | in_chain_1 : forall n x y z, R x y -> chain n y z -> chain (S n) x z.
-    
+
   Fact chain_plus a b x y z : chain a x y -> chain b y z -> chain (a+b) x z.
   Proof.
     induction 1 as [ | ? ? y ].
@@ -29,13 +29,70 @@ Section wf_chains.
       * auto.
   Qed.
 
-  Fact chain_rev n x y z : chain n x y -> R y z -> chain (S n) x z.
+  Corollary chain_snoc n x y z : chain n x y -> R y z -> chain (S n) x z.
   Proof.
     intros H1 H2.
     replace (S n) with (n+1) by lia.
     apply chain_plus with y; auto.
     constructor 2 with z; auto.
     constructor 1.
+  Qed.
+
+  Inductive chain_list : list X -> X -> X -> Prop :=
+    | in_chain_list_0 : forall x, chain_list nil x x
+    | in_chain_list_1 : forall x l y z, R x y -> chain_list l y z -> chain_list (x::l) x z.
+
+  Fact chain_chain_list n x y : chain n x y -> exists l, chain_list l x y 
+                                                      /\ n = length l.
+  Proof.
+    induction 1 as [ x | n x y z H1 _ (l & H2 & H3) ]; auto.
+    + exists nil; simpl; split; auto; constructor.
+    + exists (x::l); simpl; split; auto; constructor 2 with y; auto.
+  Qed.
+
+  Fact chain_list_chain l x y : chain_list l x y -> chain (length l) x y. 
+  Proof.
+    induction 1 as [ ? | ? ? y ]; simpl; try constructor.
+    constructor 2 with y; auto.
+  Qed.
+
+  Fact chain_list_app l x y m z : chain_list l x y 
+                               -> chain_list m y z 
+                               -> chain_list (l++m) x z.
+  Proof.
+    induction 1 as [ | l x y ]; simpl; auto.
+    constructor 2 with y; auto.
+  Qed.
+
+  Lemma chain_list_inv l x y : 
+         chain_list l x y -> l = nil /\ x = y
+                          \/ exists k l', l = x::l' /\ R x k /\ chain_list l' k y.
+  Proof. intros [|]; firstorder. Qed.
+
+  Corollary chain_list_nil_inv x y : chain_list nil x y -> x = y.
+  Proof.
+    intros H; apply chain_list_inv in H.
+    destruct H as [ (_ & ->) | (? & ? & ? & _) ]; auto; discriminate.
+  Qed.
+
+  Corollary chain_list_cons_inv x l y z : 
+         chain_list (x::l) y z -> x = y /\ exists k, R x k /\ chain_list l k z.
+  Proof.
+    intros H.
+    apply chain_list_inv in H.
+    destruct H as [ (? & _) | (k & l' & H & ? & ?) ]; try discriminate.
+    inversion H; firstorder.
+  Qed.
+
+  Lemma chain_list_app_inv l m x z : 
+         chain_list (l++m) x z -> exists y, chain_list l x y /\ chain_list m y z.
+  Proof.
+    revert x; induction l as [ | a l IHl ]; intros x.
+    + exists x; simpl; split; auto; constructor.
+    + simpl; intros H; apply chain_list_cons_inv in H.
+      destruct H as (-> & b & H1 & H2).
+      apply IHl in H2; destruct H2 as (y & H2 & H3).
+      exists y; split; auto; constructor 2 with b; auto.
   Qed.
 
   (* If chains to x have bounded length then x is R-accessible *)
@@ -53,8 +110,8 @@ Section wf_chains.
     + constructor 1; intros y Hy.
       apply IHk; intros n z Hn.
       apply le_S_n. 
-      apply (Hx _ z). 
-      apply chain_rev with y; auto.
+      apply (Hx _ z).
+      apply chain_snoc with y; auto.
   Qed.
 
   (* If every x has bounded chains to itself then R is WF *)
