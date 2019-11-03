@@ -9,7 +9,7 @@
 
 Require Import List Arith Eqdep_dec Lia.
 
-Require Import acc_irr.
+Require Import acc_irr measure_ind.
 
 Set Implicit Arguments.
 
@@ -231,41 +231,108 @@ End list_dec.
 Section finite.
 
   Definition finite_t X := { lX | forall x : X, In x lX }.
+  Definition finite X := exists lX, forall x : X, In x lX.
 
-  Theorem fin_length n : { ll | forall l : list bool, length l < n <-> In l ll }.
-  Proof. 
-    induction n as [ | n (ll & Hll) ].
-    + exists nil; intros; split; try lia; intros [].
-    + exists (nil :: map (cons true) ll ++ map (cons false) ll).
-      intros [ | [] l ]; simpl.
-      * split; auto; lia.
-      * split. 
-        - right; apply in_or_app; left; apply in_map_iff.
-          exists l; split; auto; apply Hll; lia.
-        - intros [ H | H ]; try discriminate.
-          apply in_app_or in H; destruct H as [ H | H ];
-            apply in_map_iff in H; destruct H as (m & H1 & H2);
-            apply Hll in H2; inversion H1; subst; try lia.
-      * split.
-        - right; apply in_or_app; right; apply in_map_iff.
-          exists l; split; auto; apply Hll; lia.
-        - intros [ H | H ]; try discriminate.
-          apply in_app_or in H; destruct H as [ H | H ];
-            apply in_map_iff in H; destruct H as (m & H1 & H2);
-            apply Hll in H2; inversion H1; subst; try lia.
+  Fact finite_t_finite X : finite_t X -> finite X.
+  Proof. intros (l & ?); exists l; auto. Qed.
+
+  Definition fin_t X (P : X -> Prop) := { l | forall x, P x <-> In x l }.
+  Definition fin X (P : X -> Prop) := exists l, forall x, P x <-> In x l.
+
+  Fact fin_t_fin X P : @fin_t X P -> fin P.
+  Proof. intros (l & ?); exists l; auto. Qed.
+
+  Fact finite_t_fin_t_eq X : (finite_t X -> fin_t (fun _ : X => True))
+                           * (fin_t (fun _ : X => True) -> finite_t X).
+  Proof.
+    split; intros (l & ?); exists l; firstorder.
   Qed.
 
-  Theorem finite_t_bool_list n : finite_t { l : list bool | length l < n }.
+  Fact fin_t_map X Y (f : X -> Y) (P Q : _ -> Prop) : 
+             (forall y, Q y <-> exists x, f x = y /\ P x)
+          -> @fin_t X P
+          -> @fin_t Y Q.
   Proof.
-    destruct (fin_length n) as (ll & Hll).
-    set (f (l : list bool) (H : In l ll) := exist (fun l => length l < n) l (proj2 (Hll l) H)).
-    exists (list_in_map _ f).
-    intros (l & Hl).
-    generalize Hl; intros H.
-    apply Hll in Hl.
-    replace (exist _ l H) with (f l Hl).
-    + apply In_list_in_map.
-    + unfold f; f_equal; apply lt_pirr.
+    intros H (lP & HP).
+    exists (map f lP).
+    intros x; rewrite in_map_iff, H.
+    firstorder.
+  Qed.
+
+  Fixpoint list_prod X Y (l : list X) (m : list Y) :=
+    match l with
+      | nil  => nil
+      | x::l => map (fun y => (x,y)) m ++ list_prod l m
+    end.
+
+  Fact list_prod_spec X Y l m c : In c (@list_prod X Y l m) <-> In (fst c) l /\ In (snd c) m.
+  Proof.
+    revert c; induction l as [ | x l IHl ]; intros c; simpl; try tauto.
+    rewrite in_app_iff, IHl, in_map_iff; simpl.
+    split.
+    + intros [ (y & <- & ?) | (? & ?) ]; simpl; auto.
+    + intros ([ -> | ] & ? ); destruct c; simpl; firstorder.
+  Qed.
+
+  Fact fin_t_prod X Y (P Q : _ -> Prop) : 
+         @fin_t X P -> @fin_t Y Q -> fin_t (fun c => P (fst c) /\ Q (snd c)).
+  Proof.
+    intros (l & Hl) (m & Hm).
+    exists (list_prod l m); intro; rewrite list_prod_spec, Hl, Hm; tauto.
+  Qed.
+
+  Fact fin_t_sum X Y (P Q : _ -> Prop) :
+         @fin_t X P -> @fin_t Y Q -> fin_t (fun z : X + Y => match z with inl x => P x | inr y => Q y end).
+  Proof.
+    intros (l & Hl) (m & Hm).
+    exists (map inl l ++ map inr m).
+    intros z; rewrite in_app_iff, in_map_iff, in_map_iff.
+    destruct z as [ x | y ]; [ rewrite Hl | rewrite Hm ].
+    + split.
+      * left; exists x; auto.
+      * intros [ (z & E & ?) | (z & C & _) ]; try discriminate; inversion E; subst; auto.
+    + split.
+      * right; exists y; auto.
+      * intros [ (z & C & _) | (z & E & ?) ]; try discriminate; inversion E; subst; auto.
+  Qed.
+
+  Fact finite_t_unit : finite_t unit.
+  Proof. exists (tt::nil); intros []; simpl; auto. Qed.
+
+  Fact finite_t_bool : finite_t bool.
+  Proof. exists (true::false::nil); intros []; simpl; auto. Qed.
+
+  Theorem fin_t_length X n : finite_t X -> fin_t (fun l => @length X l < n).
+  Proof.
+    intros HX.
+    apply finite_t_fin_t_eq in HX.
+    generalize finite_t_unit; intros H1.
+    apply finite_t_fin_t_eq in H1.
+    induction n as [ | n IHn ].
+    + exists nil; intros; split; try lia; intros [].
+    + generalize (fin_t_sum H1 (fin_t_prod HX IHn)).
+      apply fin_t_map with (f := fun c => match c with
+        | inl _     => nil
+        | inr (x,l) => x::l
+      end).
+      intros [ | x l ]; simpl.
+      * split; try lia; exists (inl tt); auto.
+      * split.
+        - intros Hl; exists (inr (x,l)); simpl; msplit 2; auto; lia.
+        - intros ([ [] | (y,m) ] & E & H); try discriminate.
+          simpl in *; inversion E; subst; lia.
+  Qed.
+
+  Theorem finite_t_list X n : finite_t X -> finite_t { l : list X | length l < n }.
+  Proof.
+    intros H; apply (fin_t_length n) in H; revert H; intros (l & Hl).
+    assert (forall x, In x l -> length x < n) as f by (intro; apply Hl).
+    set (g x Hx := exist (fun x => length x < n) x (f x Hx)).
+    exists (list_in_map l g).
+    intros (x & Hx).
+    assert (G : In x l) by (revert Hx; apply Hl).
+    assert (E : Hx = f _ G) by apply lt_pirr.
+    subst Hx; apply In_list_in_map with (f := g).
   Qed.
 
   Theorem finite_t_option X : finite_t X -> finite_t (option X).
@@ -276,7 +343,169 @@ Section finite.
     right; apply in_map_iff; exists x; auto.
   Qed.
 
+  Section dec.
+
+    Variable (X : Type) (P : X -> Prop) (Pdec : forall x, { P x } + { ~ P x }).
+    
+    Theorem fin_t_dec Q : @fin_t X Q -> fin_t (fun x => P x /\ Q x).
+    Proof.
+      intros (l & Hl).
+      exists (filter (fun x => if Pdec x then true else false) l).
+      intros x; rewrite filter_In, <- Hl.
+      destruct (Pdec x); try tauto.
+      split; try tauto.
+      intros []; discriminate.
+    Qed.
+
+  End dec.
+
 End finite.
+
+Section dec.
+
+  Variable (X : Type).
+
+  Theorem exists_dec_fin_t 
+           (P Q : X -> Prop) 
+           (Pdec : forall x, { P x } + { ~ P x }) 
+           (HQ : fin_t Q)
+           (HPQ : forall x, P x -> Q x) :
+           { exists x, P x } + { ~ exists x, P x }.
+  Proof.
+    generalize (fin_t_dec _ Pdec HQ); intros ([ | x l ] & Hl).
+    + right; intros (x & Hx); apply (Hl x); split; auto.
+    + left; exists x; apply Hl; simpl; auto.
+  Qed.
+
+  Variable (eqX_dec : forall x y : X, { x = y } + { x <> y }).
+
+  Fact is_a_head_dec (l t : list X) : { x | l = t++x } + { ~ exists x, l = t++x }.
+  Proof.
+    revert t.
+    induction l as [ | a l IHl ].
+    + intros [ | t ]. 
+      * left; exists nil; auto.
+      * right; intros ([ | ] & ?); discriminate.
+    + intros [ | b t ].
+      * left; exists (a::l); auto.
+      * destruct (eqX_dec a b) as [ -> | C ].
+        - destruct (IHl t) as [ H | C ].
+          ++ left; destruct H as (x & ->).
+              exists x; auto.
+          ++ right; contradict C; destruct C as (x & E).
+             exists x; inversion E; subst; auto.
+        - right; contradict C; destruct C as (? & E); inversion E; auto.
+  Qed.
+ 
+  Fact is_a_tail_dec (l t : list X) : { x | l = x++t } + { ~ exists x, l = x++t }.
+  Proof.
+    destruct (is_a_head_dec (rev l) (rev t)) as [ H | H ].
+    + left; destruct H as (x & Hx).
+      exists (rev x).
+      apply f_equal with (f := @rev _) in Hx.
+      rewrite rev_app_distr in Hx.
+      do 2 rewrite rev_involutive in Hx; auto.
+    + right; contradict H.
+      destruct H as (x & Hx); exists (rev x); subst.
+      apply rev_app_distr.
+  Qed.
+
+End dec.
+
+Section pcp_hand.
+
+  Variable (X : Type) (lc : list (list X * list X)).
+
+  Inductive pcp_hand : list X -> list X -> Prop :=
+    | in_pcph_0 : forall x y, In (x,y) lc -> pcp_hand x y
+    | in_pcph_1 : forall x y u l, In (x,y) lc -> pcp_hand u l -> pcp_hand (x++u) (y++l).
+
+  (** Any hand is either a card or of the for x++p/y++q where
+      x/y is a non-void card and p/q is a hand *)
+
+  Lemma pcp_hand_inv p q : 
+       pcp_hand p q -> In (p,q) lc 
+                    \/ exists x y p' q', In (x,y) lc /\ pcp_hand p' q' 
+                                      /\ p = x++p' /\ q = y++q' 
+                        /\  (x <> nil /\ y = nil  
+                          \/ x = nil /\ y <> nil
+                          \/ x <> nil /\ y <> nil ).
+  Proof.
+    induction 1 as [ x y H | x y p q H1 H2 IH2 ].
+    + left; auto. 
+    + destruct x as [ | a x ]; [ destruct y as [ | b y ] | ].
+      * simpl; auto.
+      * right; exists nil, (b::y), p, q; simpl; msplit 4; auto.
+        right; left; split; auto; discriminate.
+      * right; exists (a::x), y, p, q; simpl; msplit 4; auto.
+        destruct y.
+        - left; split; auto; discriminate.
+        - right; right; split; discriminate.
+  Qed.
+
+  Definition PCP := exists l, pcp_hand l l.
+
+  Section bounded_dec.
+
+    (** It is possible to decide pcp_hand, when equality is decidable
+        of course *)
+  
+    Variable eqX_dec : forall x y : X, { x = y } + { x <> y }.
+
+    Let eqlX_dec : forall l m : list X, { l = m } + { l <> m }.
+    Proof. apply list_eq_dec; auto. Qed.
+
+    Let eqXX_dec : forall p q : list X * list X, { p = q } + { p <> q }.
+    Proof. decide equality; auto. Qed.
+
+    (** By induction on the combined length of p and q *)
+
+    Theorem pcp_hand_dec p q : { pcp_hand p q } + { ~ pcp_hand p q }.
+    Proof.
+      induction on p q as dec with measure (length p + length q).
+      set (P (c : list X * list X) := let (x,y) := c 
+           in exists d, p = x++fst d /\ q = y++snd d /\ pcp_hand (fst d) (snd d) /\ (x <> nil \/ y <> nil)).
+      assert (forall c, { P c } + { ~ P c }) as Pdec.
+      { intros (x,y); simpl.
+        assert ( { x = nil /\ y = nil } + { x <> nil \/ y <> nil } ) as H.
+        1: { destruct (eqlX_dec x nil); destruct (eqlX_dec y nil); tauto. }
+        destruct H as [ (H1 & H2) | Hxy ].
+        1: { right; intros ((? & ?) & ?); tauto. }
+        destruct (is_a_head_dec eqX_dec p x) as [ (p' & Hp') | Hp ].
+        2: { right; contradict Hp; revert Hp. 
+             intros ((p',?) & E & _); exists p'; auto. }
+        destruct (is_a_head_dec eqX_dec q y) as [ (q' & Hq') | Hq ].
+        2: { right; contradict Hq; revert Hq. 
+             intros ((?,q') & _ & E & _); exists q'; auto. }
+        destruct (dec p' q') as [ H' | H' ].
+        + subst; do 2 rewrite app_length.
+          destruct x; try (simpl; lia).
+          destruct y; try (simpl; lia).
+          destruct Hxy as [ [] | [] ]; auto.
+        + left; exists (p',q'); simpl; tauto.
+        + right; contradict H'; revert H'.
+          intros ((u,v) & -> & -> & C & _); simpl in *. 
+          apply app_inv_head in Hp'.
+          apply app_inv_head in Hq'.
+          subst; auto. }
+      destruct list_dec with (1 := Pdec) (l := lc)
+        as [ ((x,y) & H1 & H) | H ]; unfold P in H.
+      + left.
+        destruct H as ((p',q') & -> & -> & H & _); simpl in *.
+        constructor 2; auto.
+      + destruct In_dec with (1 := eqXX_dec) (a := (p,q)) (l := lc)
+          as [ H2 | H2 ].
+        * left; constructor 1; auto.
+        * right; contradict H2.
+          apply pcp_hand_inv in H2.
+          destruct H2 as [ | (x & y & p' & q' & H2 & H3 & -> & -> & H4) ]; auto.
+          destruct H with (1 := H2).
+          exists (p', q'); msplit 3; tauto.
+    Qed.
+
+  End bounded_dec.
+
+End pcp_hand.
 
 (** Then first order terms with signature *)
 
@@ -792,6 +1021,12 @@ Section fol.
 
     Section decidable.
 
+      (** REMARK: not requiring the sem_pred relation to be decidable
+          would allow hiding uncomputability inside the model which
+          would be kind of cheating. The semantic relation should be
+          decidable, only the (finite) satisfiability relation should 
+          be undec *)
+
       (** For the semantics relation to be decidable over a finite domain,
          it is necessary and SUFFICIENT that the sem_pred relation is decidable
          or equivalently, each predicate is interpreted as a map: vec X _ -> bool *)
@@ -822,41 +1057,6 @@ End fol.
 Hint Rewrite fo_term_vars_fix_0 fo_term_vars_fix_1  
              fo_term_subst_fix_0 fo_term_subst_fix_1
              fot_sem_fix_0 fot_sem_fix_1 : fo_term_db.
-
-Section pcp_hand.
-
-  Variable (X : Type) (lc : list (list X * list X)).
-
-  Inductive pcp_hand : list X -> list X -> Prop :=
-    | in_pcph_0 : forall x y, In (x,y) lc -> pcp_hand x y
-    | in_pcph_1 : forall x y u l, In (x,y) lc -> pcp_hand u l -> pcp_hand (x++u) (y++l).
-
-  (** Any hand is either a card or of the for x++p/y++q where
-      x/y is a non-void card and p/q is a hand *)
-
-  Lemma pcp_hand_inv p q : 
-       pcp_hand p q -> In (p,q) lc 
-                    \/ exists x y p' q', In (x,y) lc /\ pcp_hand p' q' 
-                                      /\ p = x++p' /\ q = y++q' 
-                        /\  (x <> nil /\ y = nil  
-                          \/ x = nil /\ y <> nil
-                          \/ x <> nil /\ y <> nil ).
-  Proof.
-    induction 1 as [ x y H | x y p q H1 H2 IH2 ].
-    + left; auto. 
-    + destruct x as [ | a x ]; [ destruct y as [ | b y ] | ].
-      * simpl; auto.
-      * right; exists nil, (b::y), p, q; simpl; msplit 4; auto.
-        right; left; split; auto; discriminate.
-      * right; exists (a::x), y, p, q; simpl; msplit 4; auto.
-        destruct y.
-        - left; split; auto; discriminate.
-        - right; right; split; discriminate.
-  Qed.
-
-  Definition PCP := exists l, pcp_hand l l.
-
-End pcp_hand.
 
 Tactic Notation "solve" "ite" :=
       match goal with _ : ?x < ?y |- context[if le_lt_dec ?y ?x then _ else _]
@@ -942,13 +1142,15 @@ Section bpcp.
 
   Section BPCP_fin_sat.
 
+    (** This model is decidable because pcp_hand is decidable *)
+
     Variable (l : list bool) (Hl : pcp_hand lc l l). 
 
     Let n := length l.
 
     Let X := option { m : list bool | length m < S n }.
     Let fin_X : finite_t X.
-    Proof. apply finite_t_option, finite_t_bool_list. Qed.
+    Proof. apply finite_t_option, finite_t_list, finite_t_bool. Qed.
 
     Let lX := proj1_sig fin_X.
     Let HlX : forall p, In p lX.
