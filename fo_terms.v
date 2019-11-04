@@ -1191,7 +1191,7 @@ Section bpcp.
   Definition eq_inj (b : bool) := ∀(∀( ¬(f_ b (£1) ≡ ∗) ⤑ f_ b (£1) ≡ f_ b (£0) ⤑ £1 ≡ £0)).
   Definition eq_real := ∀(∀(f_ true (£1) ≡ f_ false (£0) ⤑ f_ true (£1) ≡ ∗
                                                          ⟑ f_ false (£0) ≡ ∗)).
-  Definition eq_undef b := f_ b ∗ ≡ ∗.
+  Definition eq_undef b := f_ b ∗ ≡ ∗.  (* Dominik forgot that one in his draft *)
 
   Definition phi_eq := eq_neq true ⟑ eq_neq false 
                      ⟑ eq_inj true ⟑ eq_inj false 
