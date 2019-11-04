@@ -7,9 +7,9 @@
 (*         CeCILL v2 FREE SOFTWARE LICENSE AGREEMENT          *)
 (**************************************************************)
 
-Require Import List Arith Eqdep_dec Lia.
+Require Import List Arith Eqdep_dec Lia Bool.
 
-Require Import acc_irr measure_ind.
+Require Import acc_irr measure_ind wf_finite.
 
 Set Implicit Arguments.
 
@@ -281,6 +281,12 @@ Section finite.
     exists (list_prod l m); intro; rewrite list_prod_spec, Hl, Hm; tauto.
   Qed.
 
+  Fact finite_prod X Y : finite X -> finite Y -> finite (X*Y).
+  Proof.
+    intros (l & Hl) (m & Hm); exists (list_prod l m).
+    intros []; apply list_prod_spec; auto.
+  Qed.
+
   Fact fin_t_sum X Y (P Q : _ -> Prop) :
          @fin_t X P -> @fin_t Y Q -> fin_t (fun z : X + Y => match z with inl x => P x | inr y => Q y end).
   Proof.
@@ -359,6 +365,50 @@ Section finite.
 
   End dec.
 
+  Section list_reif.
+
+    Variable (X Y : Type) (eqX_dec : forall x y : X, { x = y } + { x <> y })
+             (R : X -> Y -> Prop).
+    
+    Theorem list_reif (l : list X) :
+            (forall x, In x l -> exists y, R x y)
+         -> exists f, forall x (Hx : In x l), R x (f x Hx).
+    Proof.
+      induction l as [ | x l IHl ]; intros Hl.
+      + exists (fun x (Hx : @In X x nil) => False_rect Y Hx).
+        intros _ [].
+      + destruct (Hl x) as (y & Hy); simpl; auto.
+        destruct IHl as (f & Hf).
+        * intros; apply Hl; simpl; auto.
+        * assert (forall z, In z (x::l) -> x <> z -> In z l) as H1.
+          { intros z [ -> | ] ?; tauto. }
+          exists (fun z Hz => 
+            match eqX_dec x z with
+              | left   _ => y
+              | right  H => f z (H1 _ Hz H)
+            end).
+          intros z Hz.
+          destruct (eqX_dec x z); subst; auto.
+    Qed.  
+ 
+  End list_reif.
+
+  (** Will be useful to reify total relations into actual functions
+      over finite and discrete domains *)
+
+  Theorem finite_reif X Y R : (forall x y : X, { x = y } + { x <> y })
+                           -> finite X
+                           -> (forall x : X, exists y : Y, R x y)
+                           -> exists f, forall x, R x (f x).
+  Proof.
+    intros H1 (l & H2) H3.
+    destruct list_reif with (1 := H1) (R := R) (l := l)
+      as (f & Hf).
+    + intros; auto.
+    + exists (fun x => f x (H2 x)).
+      intros; auto.
+  Qed.
+
 End finite.
 
 Section dec.
@@ -397,7 +447,7 @@ Section dec.
         - right; contradict C; destruct C as (? & E); inversion E; auto.
   Qed.
  
-  Fact is_a_tail_dec (l t : list X) : { x | l = x++t } + { ~ exists x, l = x++t }.
+  Fact is_a_tail_dec (l t : list X) : { exists x, x++t = l } + { ~ exists x, x++t = l }.
   Proof.
     destruct (is_a_head_dec (rev l) (rev t)) as [ H | H ].
     + left; destruct H as (x & Hx).
@@ -894,10 +944,17 @@ Section fol.
 
     Hint Rewrite fot_sem_fix_0 fot_sem_fix_1 : fo_term_db.
 
-    Fact fot_sem_ext φ ψ : (forall n, φ n = ψ n) -> forall t, ⟦t⟧ φ = ⟦t⟧ ψ.
+    Fact fot_sem_ext t φ ψ : (forall n, In n (fo_term_vars t) -> φ n = ψ n) 
+                           -> ⟦t⟧ φ = ⟦t⟧ ψ.
     Proof.
-      induction t; rew fot; f_equal; auto.
-      apply vec_map_ext; intros; auto.
+      revert φ ψ; induction t as [ n | s v IHv ]; intros phi psy H; rew fot.
+      + apply H; simpl; auto.
+      + f_equal; apply vec_map_ext.
+        intros x Hx; apply IHv; auto.
+        intros n Hn; apply H; rew fot.
+        apply in_flat_map. 
+        exists x; split; auto.
+        apply in_vec_list; auto.
     Qed.
 
     Fact fot_sem_subst φ σ t : ⟦fo_term_subst σ t⟧ φ = ⟦t⟧ (fun n => ⟦σ n⟧ φ).
@@ -1113,6 +1170,15 @@ Section bpcp.
       | b::l => f_ b (lb_app l t)
     end.
 
+  Fact lb_app_app l m t : lb_app (l++m) t = lb_app l (lb_app m t).
+  Proof. induction l; simpl; auto; do 2 f_equal; auto. Qed.
+
+  Fact fot_vars_lb_app l t : fo_term_vars (lb_app l t) = fo_term_vars t.
+  Proof.
+    induction l as [ | x l IHl ]; simpl; rew fot; auto.
+    simpl; rewrite <- app_nil_end; auto.
+  Qed.
+
   Notation lb2term := (fun l => lb_app l e).
 
   Definition phi_P := ∀ (∀ (𝓟  (£1) (£0) ⤑ ¬ (£1 ≡ ∗) ⟑ ¬ (£0 ≡ ∗))).
@@ -1125,9 +1191,26 @@ Section bpcp.
   Definition eq_inj (b : bool) := ∀(∀( ¬(f_ b (£1) ≡ ∗) ⤑ f_ b (£1) ≡ f_ b (£0) ⤑ £1 ≡ £0)).
   Definition eq_real := ∀(∀(f_ true (£1) ≡ f_ false (£0) ⤑ f_ true (£1) ≡ ∗
                                                          ⟑ f_ false (£0) ≡ ∗)).
+  Definition eq_undef b := f_ b ∗ ≡ ∗.
+
   Definition phi_eq := eq_neq true ⟑ eq_neq false 
                      ⟑ eq_inj true ⟑ eq_inj false 
+                     ⟑ eq_undef true ⟑ eq_undef false
                      ⟑ eq_real.
+
+  Definition eq_equiv := (∀(£0 ≡ £0)) 
+                       ⟑ (∀(∀(£0 ≡ £1 ⤑ £1 ≡ £0)))
+                       ⟑ (∀(∀(∀(£0 ≡ £1 ⤑ £1 ≡ £2 ⤑ £0 ≡ £2)))).
+ 
+  Definition eq_congr_f b := ∀(∀(£0 ≡ £1 ⤑ f_ b (£0) ≡ f_ b (£1))).
+  Definition eq_congr_pred p := ∀(∀(∀(∀(£0 ≡ £1 ⤑ £2 ≡ £3 ⤑ fol_atom a_pred p (£0##£2##ø)
+                                                                                                                    ⤑ fol_atom a_pred p (£1##£3##ø))))).
+
+  Definition eq_congr := eq_congr_f true 
+                       ⟑ eq_congr_f false
+                       ⟑ eq_congr_pred p_P
+                       ⟑ eq_congr_pred p_lt
+                       ⟑ eq_equiv.
 
   Definition lt_pair (u v x y : term) := (u ≺ x ⟑ v ≡ y) ⟇ (v ≺ y ⟑ u ≡ x) ⟇ (u ≺ x ⟑ v ≺ y).
 
@@ -1138,7 +1221,9 @@ Section bpcp.
 
   Definition phi_simul := ∀(∀(𝓟 (£1) (£0) ⤑ fol_big_disj (map lt_simul lc))).
 
-  Definition phi_R := phi_P ⟑ phi_lt ⟑ phi_eq ⟑ phi_simul ⟑ ∃(𝓟 (£0) (£0)).
+  Definition phi_R := phi_P ⟑ phi_lt ⟑ phi_eq 
+                    ⟑ phi_simul ⟑ eq_congr
+                    ⟑ ∃(𝓟 (£0) (£0)).
 
   Section BPCP_fin_sat.
 
@@ -1185,6 +1270,22 @@ Section bpcp.
         exact (s <> t /\ exists u, u++s = t).
       + exact (vec_head v = vec_head (vec_tail v)).
     Defined.
+
+    (** This model has decidable sem_pred *)
+
+    Let sem_pred_dec : forall p v, { @sem_pred p v } + { ~ sem_pred v }.
+    Proof.
+      intros []; simpl; intros v; vec split v with x; vec split v with y; vec nil v; clear v; simpl;
+        revert x y; intros [ (x & Hx) | ] [ (y & Hy) | ]; simpl; try tauto.
+      + apply pcp_hand_dec, bool_dec.
+      + destruct (list_eq_dec bool_dec x y);
+        destruct (is_a_tail_dec bool_dec y x); tauto.
+      + destruct (list_eq_dec bool_dec x y) as [ | C ]; [ left | right ].
+        * subst; repeat f_equal; apply lt_pirr.
+        * contradict C; inversion C; auto.
+      + right; discriminate.
+      + right; discriminate.
+    Qed.
 
     Notation "⟦ t ⟧" := (fun φ => fot_sem sem_sym φ t).
 
@@ -1240,18 +1341,23 @@ Section bpcp.
       rew fot; simpl; auto.
     Qed.
 
+    Notation "⟪ A ⟫" := (fun φ => fol_sem sem_sym sem_pred φ A).
+
+    Let sem_fol_dec A φ : { ⟪A⟫ φ } + { ~ ⟪A⟫ φ }.
+    Proof.
+      apply fol_sem_dec with (lX := lX); auto.
+    Qed.
+
     Let φ : nat -> X := fun _ => None.
 
-    Notation "⟪ A ⟫" := (fol_sem sem_sym sem_pred φ A).
-
-    Let sem_phi_P : ⟪ phi_P ⟫.
+    Let sem_phi_P : ⟪ phi_P ⟫ φ.
     Proof.
       simpl; intros [ (x & Hx) | ] [ (y & Hy) | ]; simpl;
       unfold env_lift; simpl; rew fot; unfold sem_sym in |- *; simpl; try tauto.
       intros _; split; intros ?; discriminate.
     Qed.
 
-    Let sem_phi_lt : ⟪ phi_lt ⟫.
+    Let sem_phi_lt : ⟪ phi_lt ⟫ φ.
     Proof.
       simpl; split.
       + intros [ (x & Hx) | ]; simpl; auto.
@@ -1273,15 +1379,16 @@ Section bpcp.
           exists (b++a); rewrite app_ass; auto.
     Qed.
 
-    Let sem_phi_eq : ⟪ phi_eq ⟫.
+    Let sem_phi_eq : ⟪ phi_eq ⟫ φ.
     Proof.
-      simpl; msplit 4.
+      simpl; msplit 6.
       1,2: intros [ (x & Hx) | ]; simpl; rew fot; unfold sem_sym; simpl; try discriminate;
           destruct (le_lt_dec n (length x)) as [ | ]; try discriminate.
       1,2: intros [ (x & Hx) | ] [ (y & Hy) | ]; simpl; rew fot; simpl; auto;
           try destruct (le_lt_dec n (length x)) as [ | ]; try destruct (le_lt_dec n (length y)) as [ | ];
           try discriminate; try tauto;
           inversion 2; subst; repeat f_equal; apply lt_pirr.
+      1,2: rew fot; simpl; auto.
       intros [ (x & Hx) | ] [ (y & Hy) | ]; simpl; rew fot; simpl; auto;
           try destruct (le_lt_dec n (length x)) as [ | ]; try destruct (le_lt_dec n (length y)) as [ | ];
           try discriminate; try tauto.
@@ -1297,7 +1404,7 @@ Section bpcp.
       revert H; simpl; rewrite app_length; lia.
     Qed.
 
-    Let sem_phi_simul : ⟪ phi_simul ⟫.
+    Let sem_phi_simul : ⟪ phi_simul ⟫ φ.
     Proof.
       simpl.
       intros x y.
@@ -1353,7 +1460,20 @@ Section bpcp.
                   -- exists y; auto.
     Qed.
 
-    Let sem_phi_solvable :  ⟪ ∃(𝓟 (£0) (£0)) ⟫.
+    Tactic Notation "solve" "congr" int(a) int(b) :=
+      do a intros [(?&?)|]; simpl; rew fot; simpl; auto; try discriminate; do b inversion 1; auto.
+
+    Let sem_eq_congr : ⟪ eq_congr ⟫ φ.
+    Proof.
+      msplit 6; simpl; auto.
+      + solve congr 2 1.
+      + solve congr 2 1.
+      + solve congr 4 2.
+      + solve congr 4 2.
+      + solve congr 3 0; intros H1 H2; rewrite H1; auto.
+    Qed.
+
+    Let sem_phi_solvable : ⟪ ∃(𝓟 (£0) (£0)) ⟫ φ.
     Proof.
       simpl.
       exists (Some (exist _ l (lt_n_Sn _))); simpl; auto.
@@ -1367,9 +1487,297 @@ Section bpcp.
 
   End BPCP_fin_sat.
 
-  Check BPCP_sat.
+  Section fin_sat_BPCP.
+
+    Variable (X : Type)
+             (HX : finite X)
+             (sem_sym  : forall s, vec X (a_sym s) -> X)
+             (sem_pred : forall s, vec X (a_pred s) -> Prop).
+
+    Notation "⟦ t ⟧" := (fun φ => fot_sem sem_sym φ t).
+    Notation "⟪ A ⟫" := (fun φ => fol_sem sem_sym sem_pred φ A).
+
+    Fact fot_sem_lb_app l t φ : ⟦ lb_app l t ⟧ φ = ⟦ lb_app l (£0) ⟧ (φ ↑ (⟦t⟧φ)).
+    Proof.
+      revert φ; induction l as [ | b l IHl ]; intros phi; simpl.
+      + unfold env_lift; rew fot; auto.
+      + rew fot; f_equal; simpl; f_equal; auto.
+    Qed.
+
+    Variable (φ : nat -> X) (model : ⟪ phi_R ⟫ φ).
+
+    Notation ε := (@sem_sym fe ø).
+    Notation "⋇" := (@sem_sym fs ø).
+    Let f b x := (@sem_sym (fb b) (x##ø)).
+
+    Let P x y := @sem_pred p_P (x##y##ø).
+    Notation "x ⪡ y" := (@sem_pred p_lt (x##y##ø)) (at level 70).
+    Notation "x ≋ y" := (@sem_pred p_eq (x##y##ø)) (at level 70).
+
+    Let lt_pair u v x y    := (  u ⪡ x /\ v ≋ y
+                                \/ v ⪡ y /\ u ≋ x
+                                \/ u ⪡ x /\ v ⪡ y ).
+
+    (** The axiom interpreted directly gives us properties of the model *)
+
+    Let HP x y : P x y -> ~ x ≋ ⋇ /\ ~ y ≋ ⋇.
+    Proof. apply model. Qed.
+
+    Let Hfb_1 b x : ~ f b x ≋ ε.
+    Proof. destruct b; apply model. Qed.
+
+    Let Hfb_2 b x y : ~ f b x ≋ ⋇ -> f b x ≋ f b y -> x ≋ y.
+    Proof. destruct b; revert x y; apply model. Qed.
+
+    Let Hfb_3 x y : f true x ≋ f false y -> f true x ≋ ⋇ /\ f false y ≋ ⋇.
+    Proof. apply model. Qed.
+
+    Let Hfb_4 b : f b ⋇ ≋ ⋇.
+    Proof. 
+      destruct model as (_ & _ & H & _).
+      destruct H as (_ & _ & _ & _ & H1 & H2 & _ ).
+      destruct b; auto.
+    Qed.
+
+    Let Hlt_irrefl x : ~ x ⪡ x.
+    Proof. apply model. Qed.
+  
+    Let Hlt_trans x y z : x ⪡ y -> y ⪡ z -> x ⪡ z.
+    Proof. apply model. Qed.
+
+    Let Heq_refl x : x ≋ x.
+    Proof. revert x; apply model. Qed.
+  
+    Let Heq_sym x y : x ≋ y -> y ≋ x.
+    Proof. apply model. Qed.
+
+    Let Heq_trans x y z : x ≋ y -> y ≋ z -> x ≋ z.
+    Proof. apply model. Qed.
+
+    Let Heq_congr_1 b x y : x ≋ y -> f b x ≋ f b y.
+    Proof. destruct b; apply model. Qed.
+
+    Let Heq_congr_2 x y x' y' : x ≋ x' -> y ≋ y' -> P x y -> P x' y'.
+    Proof. apply model. Qed.
+
+    Let Heq_congr_3 x y x' y' : x ≋ x' -> y ≋ y' -> x ⪡ y -> x' ⪡ y'.
+    Proof. apply model. Qed.
+   
+    Let sb_app l x := ⟦ lb_app l (£0) ⟧ (φ↑x).
+
+    Let Hsimul x y : P x y -> exists s t, In (s,t) lc 
+                                     /\ ( x ≋ sb_app s ε /\ y ≋ sb_app t ε
+                                      \/  exists u v, P u v /\ x ≋ sb_app s u /\ y ≋ sb_app t v
+                                                   /\ lt_pair u v x y ).
+    Proof.
+      intros H.
+      destruct model as (_ & _ & _ & Hmodel & _).
+      apply Hmodel in H.
+      clear Hmodel.
+      apply fol_sem_big_disj in H.
+      destruct H as (c & Hc & H).
+      rewrite in_map_iff in Hc.
+      destruct Hc as ((s,t) & <- & Hst).
+      exists s, t; split; auto.
+      unfold sb_app; simpl; rew fot.
+      destruct H as [ (H1 & H2) | (u & v & H1 & H2 & H3 & H4) ].
+      + left; split.
+        * revert H1; simpl; rew fot; unfold env_lift; simpl.
+          match goal with |- ?a -> ?b => cut (a=b); [ intros -> | ]; auto end.
+          do 2 f_equal.
+          rewrite fot_sem_lb_app; rew fot; simpl; f_equal.
+          apply fot_sem_ext.
+          rewrite fot_vars_lb_app; simpl.
+          intros ? [ <- | [] ]; auto.
+        * revert H2; simpl; rew fot; unfold env_lift; simpl.
+          match goal with |- ?a -> ?b => cut (a=b); [ intros -> | ]; auto end.
+          do 2 f_equal.
+          rewrite fot_sem_lb_app; rew fot; simpl; f_equal.
+          apply fot_sem_ext.
+          rewrite fot_vars_lb_app; simpl.
+          intros ? [ <- | [] ]; auto.
+      + right; exists u, v; msplit 3.
+        * apply H1.
+        * revert H2; simpl; rew fot; unfold env_lift; simpl.
+          match goal with |- ?a -> ?b => cut (a=b); [ intros -> | ]; auto end.
+          do 2 f_equal.
+          rewrite fot_sem_lb_app; rew fot; simpl; f_equal.
+          apply fot_sem_ext.
+          rewrite fot_vars_lb_app; simpl.
+          intros ? [ <- | [] ]; auto.
+        * revert H3; simpl; rew fot; unfold env_lift; simpl.
+          match goal with |- ?a -> ?b => cut (a=b); [ intros -> | ]; auto end.
+          do 2 f_equal.
+          rewrite fot_sem_lb_app; rew fot; simpl; f_equal.
+          apply fot_sem_ext.
+          rewrite fot_vars_lb_app; simpl.
+          intros ? [ <- | [] ]; auto.
+        * apply H4.
+    Qed.
+
+    Let P_refl : exists x, P x x.
+    Proof. apply model. Qed.
+
+    (* Ok we have all the ops in the model ... let us prove some real stuff *)
+
+    Let Hfb_5 b x : x ≋ ⋇ -> f b x ≋ ⋇.
+    Proof. 
+      intros H; apply Heq_congr_1 with (b := b) in H.
+      apply Heq_trans with (1 := H), Hfb_4.
+    Qed.
+
+    Let sb_app_congr_1 l x y : x ≋ y -> sb_app l x ≋ sb_app l y.
+    Proof.
+      intros H; unfold sb_app.
+      induction l as [ | b l IHl ]; simpl; rew fot.
+      + unfold env_lift; auto.
+      + apply Heq_congr_1; auto.
+    Qed.
+
+    Let sb_app_fb b l x : sb_app (b::l) x = f b (sb_app l x).
+    Proof. auto. Qed.
+
+    Let sb_app_nil x : sb_app nil x = x.
+    Proof. auto. Qed.
+
+    Let sb_app_inj l m : ~ sb_app l ε ≋ ⋇ -> sb_app l ε ≋ sb_app m ε -> l = m.
+    Proof.
+      revert m; induction l as [ | [] l IH ]; intros [ | [] m ] H E; auto.
+      + rewrite sb_app_fb, sb_app_nil in E.
+        apply Heq_sym, Hfb_1 in E; tauto.
+      + rewrite sb_app_fb, sb_app_nil in E.
+        apply Heq_sym, Hfb_1 in E; tauto.
+      + rewrite sb_app_fb, sb_app_nil in E.
+        apply Hfb_1 in E; tauto.
+      + do 2 rewrite sb_app_fb in E.
+        apply Hfb_2 in E.
+        * f_equal; apply IH; auto.
+          contradict H.
+          rewrite sb_app_fb.
+          apply Hfb_5; auto.
+        * intros C; apply H.
+          rewrite sb_app_fb; auto.
+      + do 2 rewrite sb_app_fb in E.
+        apply Hfb_3 in E.
+        destruct H.
+        rewrite sb_app_fb; tauto.
+      + rewrite sb_app_fb, sb_app_nil in E.
+        apply Hfb_1 in E; tauto.
+      + do 2 rewrite sb_app_fb in E. 
+        apply Heq_sym, Hfb_3 in E; tauto.
+      + do 2 rewrite sb_app_fb in E.
+        apply Hfb_2 in E.
+        * f_equal; apply IH; auto.
+          contradict H.
+          rewrite sb_app_fb.
+          apply Hfb_5; auto.
+        * intros C; apply H.
+          rewrite sb_app_fb; auto.
+    Qed.
+
+    Let sb_app_congr l m x y z : x ≋ sb_app l y -> y ≋ sb_app m z -> x ≋ sb_app (l++m) z.
+    Proof.
+      intros H1 H2.
+      unfold sb_app.
+      rewrite lb_app_app, fot_sem_lb_app.
+      apply (sb_app_congr_1 l) in H2.
+      apply Heq_trans with (1 := H1).
+      apply Heq_trans with (1 := H2).
+      unfold sb_app.
+      match goal with |- ?a ≋ ?b => cut (a=b); [ intros -> | ]; auto end.
+      apply fot_sem_ext.
+      intros n; rewrite fot_vars_lb_app; simpl; intros [ <- | [] ].
+      auto.
+    Qed. 
+
+    Ltac mysolve :=
+      match goal with 
+        | H1 : ?x ⪡ ?y, H2 : ?y ⪡ ?z |- ?x ⪡ ?z => revert H2; apply Hlt_trans
+        | H1 : ?x ≋ ?y, H2 : ?y ⪡ ?z |- ?x ⪡ ?z => revert H2; apply Heq_congr_3
+        | H1 : ?x ⪡ ?y, H2 : ?y ≋ ?z |- ?x ⪡ ?z => revert H1; apply Heq_congr_3
+        | H1 : ?x ≋ ?y, H2 : ?y ≋ ?z |- ?x ≋ ?z => revert H2; apply Heq_trans
+      end; auto.
+
+    Let Hlt_wf : well_founded (fun p q => match p, q with (u,v), (x,y) => lt_pair u v x y end).
+    Proof. 
+      apply wf_strict_order_finite; auto.
+      + apply finite_prod; auto.
+      + intros (x,y) [ (H1 & H2) | [ (H1 & H2) | (H1 & H2) ] ].
+        all: revert H1; apply Hlt_irrefl.
+      + intros (x1,x2) (y1,y2) (z1,z2); unfold lt_pair; simpl.
+        intros [ (H1 & H2) | [ (H1 & H2) | (H1 & H2) ] ]
+               [ (G1 & G2) | [ (G1 & G2) | (G1 & G2) ] ].
+        1: left; split; mysolve.
+        4: right; left; split; mysolve.
+        all: right; right; split; mysolve.
+    Qed.
+
+    Let P_implies_pcp_hand c : match c with (x,y) => 
+           P x y -> exists s t, x ≋ sb_app s ε /\ y ≋ sb_app t ε /\ pcp_hand lc s t 
+         end.
+    Proof.
+      induction c as [ (x,y) IH ] using (well_founded_induction Hlt_wf).
+      intros Hxy.
+      apply Hsimul in Hxy.
+      destruct Hxy as (s & t & Hst & [ (H1 & H2) | H ]).
+      + exists s, t; msplit 2; auto; constructor 1; auto.
+      + destruct H as (u & v & H1 & H2 & H3 & H4).
+        destruct (IH (u,v)) with (2 := H1)
+          as (s' & t' & G1 & G2 & G3); auto.
+        exists (s++s'), (t++t'); msplit 2.
+        * apply sb_app_congr with (1 := H2); auto.
+        * apply sb_app_congr with (1 := H3); auto.
+        * constructor 2; auto.
+    Qed.  
+
+    Theorem model_implies_pcp_hand : exists s, pcp_hand lc s s.
+    Proof.
+      destruct P_refl as (x & Hx).
+      destruct (P_implies_pcp_hand (x,x)) with (1 := Hx)
+        as (s & t & H1 & H2 & H3).
+      apply HP in Hx.
+      replace t with s in H3.
+      + exists s; auto.
+      + apply sb_app_inj.
+        * intros H; destruct Hx as [ [] _ ].
+          apply Heq_trans with (1 := H1); auto.
+        * apply Heq_trans with (2 := H2); auto.
+    Qed.
+
+  End fin_sat_BPCP.
+
+  Theorem fin_sat_BPCP : fo_form_fin_SAT phi_R -> exists l, pcp_hand lc l l.
+  Proof.
+    intros (X & sem_sym & sem_pred & l & phi & M & F).
+    apply model_implies_pcp_hand 
+      with (sem_sym := sem_sym) 
+           (sem_pred := sem_pred) 
+           (φ := phi); auto.
+    exists l; auto.
+  Qed.
 
 End bpcp.
+
+Section reduction.
+
+  Definition BPCP_input := list (list bool * list bool).
+  Definition FIN_SAT_input := fol_form a_sym a_pred.
+
+  Definition BPCP_problem (lc : BPCP_input) := exists l, pcp_hand lc l l.
+  Definition FIN_SAT_problem (A : FIN_SAT_input) := fo_form_fin_SAT A.
+ 
+  Theorem BPCP_FIN_SAT : exists f, forall x : BPCP_input, BPCP_problem x <-> FIN_SAT_problem (f x).
+  Proof.
+    exists phi_R; intros lc; split.
+    + intros (l & Hl); revert Hl; apply BPCP_sat.
+    + apply fin_sat_BPCP.
+  Qed.
+
+End reduction.
+
+Check BPCP_FIN_SAT.
+Print Assumptions BPCP_FIN_SAT.
+
 
 
 
