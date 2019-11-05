@@ -495,6 +495,31 @@ Section pcp_hand.
 
   Definition PCP := exists l, pcp_hand l l.
 
+  Section pcp_induction.
+
+    Implicit Type (l m : list X).
+
+    (** Notice that we could downgrade strict_suffix to Prop because
+        a and b could be computed from the knowledge of there existence *)
+
+    Definition strict_suffix x y l m := { a : _ & { b | (a <> nil \/ b <> nil) /\ l = a++x /\ m = b++y } }.
+    
+    Variable (P : list X -> list X -> Type)
+             (IHP : forall l m, (forall l' m', strict_suffix l' m' l m -> P l' m') -> P l m).
+
+    Theorem pcp_induction l m : P l m.
+    Proof.
+      induction on l m as IH with measure (length l + length m).
+      apply IHP.
+      intros l' m' (x & y & H & -> & ->).
+      apply IH.
+      do 2 rewrite app_length.
+      destruct x; destruct y; simpl; try lia.
+      destruct H as [ [] | [] ]; auto.
+    Qed.
+
+  End pcp_induction.
+    
   Section bounded_dec.
 
     (** It is possible to decide pcp_hand, when equality is decidable
@@ -508,11 +533,12 @@ Section pcp_hand.
     Let eqXX_dec : forall p q : list X * list X, { p = q } + { p <> q }.
     Proof. decide equality; auto. Qed.
 
-    (** By induction on the combined length of p and q *)
+    (** Replaced induction on length p + length with strict suffix pair induction *)
 
     Theorem pcp_hand_dec p q : { pcp_hand p q } + { ~ pcp_hand p q }.
     Proof.
-      induction on p q as dec with measure (length p + length q).
+      revert p q; apply pcp_induction; intros p q dec.
+
       set (P (c : list X * list X) := let (x,y) := c 
            in exists d, p = x++fst d /\ q = y++snd d /\ pcp_hand (fst d) (snd d) /\ (x <> nil \/ y <> nil)).
       assert (forall c, { P c } + { ~ P c }) as Pdec.
@@ -528,16 +554,14 @@ Section pcp_hand.
         2: { right; contradict Hq; revert Hq. 
              intros ((?,q') & _ & E & _); exists q'; auto. }
         destruct (dec p' q') as [ H' | H' ].
-        + subst; do 2 rewrite app_length.
-          destruct x; try (simpl; lia).
-          destruct y; try (simpl; lia).
-          destruct Hxy as [ [] | [] ]; auto.
-        + left; exists (p',q'); simpl; tauto.
+        + exists x, y; auto.
+        + left; exists (p',q'); auto.
         + right; contradict H'; revert H'.
-          intros ((u,v) & -> & -> & C & _); simpl in *. 
+          intros ((u,v) & -> & -> & C & _); simpl in *.
           apply app_inv_head in Hp'.
           apply app_inv_head in Hq'.
           subst; auto. }
+
       destruct list_dec with (1 := Pdec) (l := lc)
         as [ ((x,y) & H1 & H) | H ]; unfold P in H.
       + left.
