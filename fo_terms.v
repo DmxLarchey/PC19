@@ -760,7 +760,7 @@ Arguments in_var { var sym sym_ar }.
 Create HintDb fo_term_db.
 Tactic Notation "rew" "fot" := autorewrite with fo_term_db.
 
-Hint Rewrite fo_term_vars_fix_0 fo_term_vars_fix_1 : fo_term_db. 
+Hint Rewrite fo_term_vars_fix_0 fo_term_vars_fix_1 : fo_term_db.
 
 Section fo_term_subst.
 
@@ -863,19 +863,33 @@ Section fo_subst_comp.
 
 End fo_subst_comp.
 
-Definition env_lift K (phi : nat -> K) k n :=
+(* A non-recursive fixpoint to get correct unfolding *)
+
+Fixpoint env_lift K (phi : nat -> K) k n { struct n } :=
   match n with
     | 0   => k
     | S n => phi n
   end.
 
-Arguments env_lift K phi k n /.
+(* Arguments env_lift K phi k n /. *)
 Local Notation "phi ↑ k" := (env_lift phi k) (at level 0).
+
+Record fo_signature := {
+  syms : Set;
+  rels : Set;
+  ar_syms : syms -> nat;
+  ar_rels : rels -> nat
+}.
 
 Section fol.
 
-  Variable (fol_sym : Set) (fol_sym_ar : fol_sym -> nat)
-           (fol_pred : Set) (fol_pred_ar : fol_pred -> nat). 
+  Variable (Σ : fo_signature).
+
+  Notation fol_sym := (syms Σ).
+  Notation fol_pred := (rels Σ).
+
+  Notation fol_sym_ar := (ar_syms Σ).
+  Notation fol_pred_ar := (ar_rels Σ).
 
   Inductive fol_bop := fol_conj | fol_disj | fol_imp.
   Inductive fol_qop := fol_ex | fol_fa.
@@ -906,7 +920,7 @@ Section fol.
   Fixpoint fol_subst σ A :=
     match A with
       | fol_false     => fol_false
-      | @fol_atom p v => fol_atom (vec_map (fo_term_subst σ) v)
+      | @fol_atom p v => @fol_atom p (vec_map (fo_term_subst σ) v)
       | fol_bin c A B => fol_bin c (A⦃σ⦄) (B⦃σ⦄)
       | fol_quant q A => fol_quant q (A⦃⇡σ⦄) 
     end
@@ -944,8 +958,16 @@ Section fol.
 
   Section semantics.
 
-    Variable (X : Type) (sem_sym  : forall s, vec X (fol_sym_ar s) -> X)
-                        (sem_pred : forall s, vec X (fol_pred_ar s) -> Prop).
+    Record fo_model := {
+      fom_type :> Type;
+      fom_syms : forall s, vec fom_type (fol_sym_ar s) -> fom_type;
+      fom_rels : forall s, vec fom_type (fol_pred_ar s) -> Prop }.
+
+    Variable M : fo_model.
+
+    Notation X := (fom_type M).
+    Notation sem_sym := (@fom_syms M _).
+    Notation sem_pred := (@fom_rels M _).
 
     Implicit Type φ : nat -> X.
 
@@ -994,6 +1016,12 @@ Section fol.
         | fol_disj => or
         | fol_imp  => fun A B => A -> B
       end.
+
+    Fact fol_bin_sem_equiv b A A' B B' :
+            (A <-> A') -> (B <-> B') -> (fol_bin_sem b A B <-> fol_bin_sem b A' B').
+    Proof.
+      intros E1 E2; destruct b; simpl; tauto.
+    Qed. 
 
     Arguments fol_bin_sem b /.
 
@@ -1044,7 +1072,7 @@ Section fol.
     Fixpoint fol_sem φ A : Prop :=
       match A with
         | fol_false     => False
-        | fol_atom v    => sem_pred (vec_map (fun t => ⟦t⟧ φ) v)
+        | fol_atom _ v  => sem_pred (vec_map (fun t => ⟦t⟧ φ) v)
         | fol_bin b A B => fol_bin_sem b (⟪A⟫ φ) (⟪B⟫ φ) 
         | fol_quant q A => fol_quant_sem q (fun x => ⟪A⟫ (φ↑x))
       end
@@ -1113,7 +1141,7 @@ Section fol.
          or equivalently, each predicate is interpreted as a map: vec X _ -> bool *)
 
       Variable (lX : list X) (HX : forall x : X, In x lX).
-      Variable (Hpred : forall s v, { @sem_pred s v } + { ~ sem_pred v }).
+      Variable (Hpred : forall s (v : vec _ (fol_pred_ar s)), { sem_pred v } + { ~ sem_pred v }).
 
       Theorem fol_sem_dec A φ : { ⟪A⟫ φ } + { ~ ⟪A⟫ φ }.
       Proof.
@@ -1130,8 +1158,7 @@ Section fol.
   End semantics.
 
   Definition fo_form_fin_SAT (A : 𝔽) := 
-       exists X s_sym s_pred l φ, @fol_sem X s_sym s_pred φ A
-                              /\  forall x : X, In x l.
+       exists M l φ, fol_sem M φ A /\ forall x : M, In x l.
 
 End fol.
 
@@ -1139,33 +1166,46 @@ Hint Rewrite fo_term_vars_fix_0 fo_term_vars_fix_1
              fo_term_subst_fix_0 fo_term_subst_fix_1
              fot_sem_fix_0 fot_sem_fix_1 : fo_term_db.
 
+
 Tactic Notation "solve" "ite" :=
       match goal with _ : ?x < ?y |- context[if le_lt_dec ?y ?x then _ else _]
         => let G := fresh in destruct (le_lt_dec y x) as [ G | _ ]; [ exfalso; lia | ]
       end.
 
+Check fo_model.
+
+Section signature_bpcp.
+
+  Inductive bpcp_syms := fb : bool -> bpcp_syms | fe | fs.
+  Inductive bpcp_rels := p_P | p_lt | p_eq.
+
+  Definition Σpcp : fo_signature.
+  Proof.
+    exists bpcp_syms bpcp_rels.
+    + exact (fun s =>
+        match s with
+          | fb _ => 1
+          | _   => 0
+        end).
+    + exact (fun _ => 2).
+  Defined.
+
+End signature_bpcp.
+
+Check ar_syms.
+Check ar_rels.
+
+(*
+Arguments ar_syms s f /.
+Arguments ar_rels s r /.
+*)
+
 Section bpcp.
 
   Variable lc : list (list bool * list bool).
 
-  Inductive m_sym := fb : bool -> m_sym | fe | fs.
-
-  Definition a_sym s := 
-    match s with
-      | fb _ => 1
-      | _   => 0
-    end.
-
-  Inductive m_pred := p_P | p_lt | p_eq.
-
-  Definition a_pred (p : m_pred) := 2.
-
-  Arguments a_sym s /.
-  Arguments a_pred p /.
-
-  Notation term := (fo_term nat a_sym).
-
-  Notation form := (fol_form a_sym a_pred).
+  Notation term := (fo_term nat (ar_syms Σpcp)).
+  Notation form := (fol_form Σpcp).
 
   Infix "⤑" := (fol_bin fol_imp) (at level 62, right associativity).
   Infix "⟑" := (fol_bin fol_conj) (at level 60, right associativity).
@@ -1174,19 +1214,19 @@ Section bpcp.
   Notation "∃" := (fol_quant fol_ex).
 
   Infix "##" := (vec_cons) (at level 65, right associativity).
-  Notation "£" := (@in_var nat _ a_sym).
+  Notation "£" := ((@in_var nat _ _) : nat -> term).
   Notation ø := (vec_nil).
  
   Notation e := (in_fot fe ø).
   Notation "∗" := (in_fot fs ø).
-  Notation "⊥" := (fol_false a_sym a_pred).
+  Notation "⊥" := (fol_false Σpcp).
 
   Notation "¬" := (fun x => x ⤑ ⊥).
-  Notation 𝓟  := (fun x y => fol_atom a_pred p_P (x##y##ø)).
-  Notation "x ≡ y" := (fol_atom a_pred p_eq (x##y##ø)) (at level 59).
-  Notation "x ≺ y" := (fol_atom a_pred p_lt (x##y##ø)) (at level 59).
+  Notation 𝓟  := (fun x y => fol_atom Σpcp p_P (x##y##ø)).
+  Notation "x ≡ y" := (fol_atom Σpcp p_eq (x##y##ø)) (at level 59).
+  Notation "x ≺ y" := (fol_atom Σpcp p_lt (x##y##ø)) (at level 59).
 
-  Notation f_ := (fun b x => @in_fot _ _ a_sym (fb b) (x##ø)).
+  Notation f_ := (fun b x => @in_fot _ _ _ (fb b) (x##ø) : term).
 
   Fixpoint lb_app (l : list bool) (t : term) : term :=
     match l with 
@@ -1227,8 +1267,8 @@ Section bpcp.
                        ⟑ (∀(∀(∀(£0 ≡ £1 ⤑ £1 ≡ £2 ⤑ £0 ≡ £2)))).
  
   Definition eq_congr_f b := ∀(∀(£0 ≡ £1 ⤑ f_ b (£0) ≡ f_ b (£1))).
-  Definition eq_congr_pred p := ∀(∀(∀(∀(£0 ≡ £1 ⤑ £2 ≡ £3 ⤑ fol_atom a_pred p (£0##£2##ø)
-                                                                                                                    ⤑ fol_atom a_pred p (£1##£3##ø))))).
+  Definition eq_congr_pred p := ∀(∀(∀(∀(£0 ≡ £1 ⤑ £2 ≡ £3 ⤑ fol_atom Σpcp p (£0##£2##ø)
+                                                                                                                    ⤑ fol_atom Σpcp p (£1##£3##ø))))).
 
   Definition eq_congr := eq_congr_f true 
                        ⟑ eq_congr_f false
@@ -1265,39 +1305,39 @@ Section bpcp.
     Let HlX : forall p, In p lX.
     Proof. apply (proj2_sig fin_X). Qed.
 
-    Let sem_sym : forall s, vec X (a_sym s) -> X.
+    Let bpcp_model : fo_model Σpcp.
     Proof.
-      intros []; simpl.
-      + intros v.
-        case_eq (vec_head v).
-        * intros (m & Hm) H.
-          destruct (le_lt_dec n (length m)) as [ | H1 ].
+      exists X.
+      + intros []; simpl.
+        * intros v.
+          case_eq (vec_head v).
+          - intros (m & Hm) H.
+            destruct (le_lt_dec n (length m)) as [ | H1 ].
+            ++ right.
+            ++ left; exists (b::m); apply lt_n_S, H1.
           - right.
-          - left; exists (b::m); apply lt_n_S, H1.
+        * left; exists nil; apply lt_0_Sn.
         * right.
-      + left; exists nil; apply lt_0_Sn.
-      + right.
-    Defined.
-
-    Let sem_pred : forall p, vec X (a_pred p) -> Prop.
-    Proof.
-      intros []; simpl; intros v.
-      + destruct (vec_head v) as [ (s & Hs) | ].
-        2: exact False.
-        destruct (vec_head (vec_tail v)) as [ (t & Ht) | ].
-        2: exact False.
-        exact (pcp_hand lc s t).
-      + destruct (vec_head v) as [ (s & Hs) | ].
-        2: exact False.
-        destruct (vec_head (vec_tail v)) as [ (t & Ht) | ].
-        2: exact False.
-        exact (s <> t /\ exists u, u++s = t).
-      + exact (vec_head v = vec_head (vec_tail v)).
+      + intros []; simpl; intros v.
+        * destruct (vec_head v) as [ (s & Hs) | ].
+          2: exact False.
+          destruct (vec_head (vec_tail v)) as [ (t & Ht) | ].
+          2: exact False.
+          exact (pcp_hand lc s t).
+        * destruct (vec_head v) as [ (s & Hs) | ].
+          2: exact False.
+          destruct (vec_head (vec_tail v)) as [ (t & Ht) | ].
+          2: exact False.
+          exact (s <> t /\ exists u, u++s = t).
+        * exact (vec_head v = vec_head (vec_tail v)).
     Defined.
 
     (** This model has decidable sem_pred *)
 
-    Let sem_pred_dec : forall p v, { @sem_pred p v } + { ~ sem_pred v }.
+    Notation sem_sym  := (fom_syms bpcp_model).
+    Notation sem_pred := (fom_rels bpcp_model).
+
+    Let sem_pred_dec : forall p v, { sem_pred p v } + { ~ sem_pred _ v }.
     Proof.
       intros []; simpl; intros v; vec split v with x; vec split v with y; vec nil v; clear v; simpl;
         revert x y; intros [ (x & Hx) | ] [ (y & Hy) | ]; simpl; try tauto.
@@ -1311,7 +1351,7 @@ Section bpcp.
       + right; discriminate.
     Qed.
 
-    Notation "⟦ t ⟧" := (fun φ => fot_sem sem_sym φ t).
+    Notation "⟦ t ⟧" := (fun φ => fot_sem bpcp_model φ t).
 
     Let fot_sem_lb_app lb t φ : 
       match ⟦ t ⟧ φ with
@@ -1365,7 +1405,7 @@ Section bpcp.
       rew fot; simpl; auto.
     Qed.
 
-    Notation "⟪ A ⟫" := (fun φ => fol_sem sem_sym sem_pred φ A).
+    Notation "⟪ A ⟫" := (fun φ => fol_sem bpcp_model φ A).
 
     Let sem_fol_dec A φ : { ⟪A⟫ φ } + { ~ ⟪A⟫ φ }.
     Proof.
@@ -1430,10 +1470,9 @@ Section bpcp.
 
     Let sem_phi_simul : ⟪ phi_simul ⟫ φ.
     Proof.
-      simpl.
-      intros x y.
-      rewrite fol_sem_big_disj.
-      revert x y.
+      intros x y H.
+      apply (fol_sem_big_disj bpcp_model).
+      revert x y H.
       intros [ (x' & Hx) | ] [ (y' & Hy) | ]; simpl; rew fot; try tauto.
       intros H.
       apply pcp_hand_inv in H.
@@ -1505,7 +1544,7 @@ Section bpcp.
 
     Theorem BPCP_sat : fo_form_fin_SAT phi_R.
     Proof.
-      exists X, sem_sym, sem_pred, lX, φ; split; auto.
+      exists bpcp_model, lX, φ; split; auto.
       unfold phi_R; repeat (split; auto).
     Qed.
 
@@ -1513,13 +1552,15 @@ Section bpcp.
 
   Section fin_sat_BPCP.
 
-    Variable (X : Type)
-             (HX : finite X)
-             (sem_sym  : forall s, vec X (a_sym s) -> X)
-             (sem_pred : forall s, vec X (a_pred s) -> Prop).
+    Variable (M : fo_model Σpcp) (HM : finite M).
+     
+    Print fo_model.
 
-    Notation "⟦ t ⟧" := (fun φ => fot_sem sem_sym φ t).
-    Notation "⟪ A ⟫" := (fun φ => fol_sem sem_sym sem_pred φ A).
+    Notation sem_sym := (fom_syms M).
+    Notation sem_pred := (fom_rels M).
+
+    Notation "⟦ t ⟧" := (fun φ => fot_sem M φ t).
+    Notation "⟪ A ⟫" := (fun φ => fol_sem M φ A).
 
     Fact fot_sem_lb_app l t φ : ⟦ lb_app l t ⟧ φ = ⟦ lb_app l (£0) ⟧ (φ ↑ (⟦t⟧φ)).
     Proof.
@@ -1528,7 +1569,7 @@ Section bpcp.
       + rew fot; f_equal; simpl; f_equal; auto.
     Qed.
 
-    Variable (φ : nat -> X) (model : ⟪ phi_R ⟫ φ).
+    Variable (φ : nat -> M) (model : ⟪ phi_R ⟫ φ).
 
     Notation ε := (@sem_sym fe ø).
     Notation "⋇" := (@sem_sym fs ø).
@@ -1772,11 +1813,8 @@ Section bpcp.
 
   Theorem fin_sat_BPCP : fo_form_fin_SAT phi_R -> exists l, pcp_hand lc l l.
   Proof.
-    intros (X & sem_sym & sem_pred & l & phi & M & F).
-    apply model_implies_pcp_hand 
-      with (sem_sym := sem_sym) 
-           (sem_pred := sem_pred) 
-           (φ := phi); auto.
+    intros (M & l & phi & Hphi & Hl).
+    apply model_implies_pcp_hand with (M := M) (φ := phi); auto.
     exists l; auto.
   Qed.
 
@@ -1785,7 +1823,7 @@ End bpcp.
 Section reduction.
 
   Definition BPCP_input := list (list bool * list bool).
-  Definition FIN_SAT_input := fol_form a_sym a_pred.
+  Definition FIN_SAT_input := fol_form Σpcp.
 
   Definition BPCP_problem (lc : BPCP_input) := exists l, pcp_hand lc l l.
   Definition FIN_SAT_problem (A : FIN_SAT_input) := fo_form_fin_SAT A.
@@ -1802,11 +1840,211 @@ End reduction.
 Check BPCP_FIN_SAT.
 Print Assumptions BPCP_FIN_SAT.
 
+(** A signature with 7 binary relations *)
 
+Definition Σ2 : fo_signature.
+Proof.
+  exists Empty_set (bpcp_syms+bpcp_rels)%type.
+  + intros [].
+  + exact (fun _ => 2).
+Defined.
 
+Section Σbpcp_Σ2.
 
+  Notation term := (fo_term nat (ar_syms Σpcp)).
+  Notation form := (fol_form Σpcp).
 
+  Infix "⤑" := (fol_bin fol_imp) (at level 62, right associativity).
+  Infix "⟑" := (fol_bin fol_conj) (at level 60, right associativity).
+  Infix "⟇" := (fol_bin fol_disj) (at level 61, right associativity).
+  Notation "∀" := (fol_quant fol_fa).
+  Notation "∃" := (fol_quant fol_ex).
 
+  Infix "##" := (vec_cons) (at level 65, right associativity).
+  Notation "£" := ((@in_var nat _ _) : nat -> fo_term nat _).
+  Notation ø := (vec_nil).
+ 
+  Notation e := (in_fot fe ø).
+  Notation "∗" := (in_fot fs ø).
+  Notation "⊥" := (fol_false Σpcp).
+
+  Notation "¬" := (fun x => x ⤑ ⊥).
+  Notation 𝓟  := (fun x y => fol_atom Σpcp p_P (x##y##ø)).
+  Notation "x ≡ y" := (fol_atom Σpcp p_eq (x##y##ø)) (at level 59).
+  Notation "x ≺ y" := (fol_atom Σpcp p_lt (x##y##ø)) (at level 59).
+
+  Notation f_ := (fun b x => @in_fot _ _ _ (fb b) (x##ø) : term).
+
+  Check fol_subst (fun n => £(S n)).
+
+  Variable M : fo_model Σpcp.
+
+  Check fom_syms M (fb true).
+
+  Definition K : fo_model Σ2.
+  Proof.
+    exists M.
+    + intros [].
+    + intros [ [ b | | ] | r ]; simpl; intros v;
+        set (x := vec_head v); set (y := vec_head (vec_tail v)).
+      * exact (fom_syms M (fb b) (x##ø) = y).
+      * exact (fom_syms M fe ø = y).
+      * exact (fom_syms M fs ø = y).
+      * exact (fom_rels M r v).
+  Defined.
+
+  Notation "⟦ t ⟧" := (fun φ => fot_sem M φ t).
+  Notation "⟪ A ⟫" := (fun φ => fol_sem M φ A).
+
+  Notation "⟦ t ⟧'" := (fun φ => fot_sem K φ t).
+  Notation "⟪ A ⟫'" := (fun φ => fol_sem K φ A).
+
+  Ltac eqgoal := let E := fresh in match goal with |- ?a -> ?b => cut (a=b); [ intros E; rewrite E; trivial | ] end.
+
+  Hypothesis M_strict : forall x y, fom_rels M p_eq (x##y##ø) <-> y = x.
+
+  Notation "⇡ f" := (fol_subst (fun n => 
+                         match n with 
+                           | 0 => £0 
+                           | _ => £ (1+n) 
+                         end) f) (at level 0).
+
+  (** This is painless with fo_term_recursion .... try it by structural induction ;-) 
+
+      From a term t we build a formula st 
+
+            [[ t ]] phi = y <-> << A_t >> (phi lift y)
+
+    *)
+
+  Definition fot_fol (t : term) : fol_form Σ2.
+  Proof.
+    induction t as [ i | [ b | | ] v w ] using fo_term_recursion; try simpl ar_syms at 2 in v.
+    + apply (fol_atom Σ2 (inr p_eq) (£0##£(1+i)##ø)).
+    + refine (∃ ( ⇡(vec_head w) ⟑ fol_atom Σ2 (inl (fb b)) (£0##£1##ø))).
+    + exact (fol_atom Σ2 (inl fe) (£0##£0##ø)).
+    + exact (fol_atom Σ2 (inl fs) (£0##£0##ø)).
+  Defined.
+
+  Fact fot_fol_fix_var i : 
+        fot_fol (£i) = fol_atom Σ2 (inr p_eq) (£0##£(1+i)##ø).
+  Proof. apply fo_term_recursion_fix_0. Qed.
+
+  Fact fot_fol_fix_b b t : 
+        fot_fol (f_ b t) = ∃ ( ⇡(fot_fol t) ⟑ fol_atom Σ2 (inl (fb b)) (£0##£1##vec_nil)).
+  Proof. apply fo_term_recursion_fix_1. Qed.
+
+  Fact fot_fol_fix_e : 
+        fot_fol e = fol_atom Σ2 (inl fe) (£0##£0##ø).
+  Proof. apply fo_term_recursion_fix_1. Qed.
+
+  Fact fot_fol_fix_s : 
+        fot_fol ∗ = fol_atom Σ2 (inl fs) (£0##£0##ø).
+  Proof. apply fo_term_recursion_fix_1. Qed.
+
+  Opaque fot_fol.
+
+  (** The embedding preserve the semantics *)
+
+  Lemma fot_fol_sem t φ x : ⟪ fot_fol t ⟫' (φ↑x) <-> ⟦t⟧ φ = x.
+  Proof.
+    revert φ x; induction t as [ i | [ b | | ] v IH ]; intros phi x; simpl; rew fot.
+    + rewrite fot_fol_fix_var; simpl; rew fot; simpl; auto; simpl.
+    + revert IH; simpl ar_syms at 2 in v; vec split v with t. 
+      vec nil v; clear v; intros IH.
+      specialize (IH _ (or_introl eq_refl)).
+      rewrite fot_fol_fix_b.
+      split.
+      * intros (z & H1 & H2); revert H1 H2. 
+        rewrite fol_sem_subst; simpl; rew fot; simpl.
+        intros H E; rewrite <- E; do 2 f_equal; apply IH.
+        revert H; apply fol_sem_ext.
+        intros [ | [ | n ] ]; simpl; rew fot; simpl; auto.
+      * intros <-.
+        exists (fot_sem M phi t); split.
+        - rewrite fol_sem_subst.
+          generalize (proj2 (IH phi _) eq_refl).
+          apply fol_sem_ext; intros [ | n ]; simpl; rew fot; simpl; auto.
+        - simpl; rew fot; simpl; auto. 
+    + clear IH; vec nil v; rew fot; simpl; tauto.
+    + clear IH; vec nil v; rew fot; simpl; tauto.
+  Qed.
+
+  Definition fot_fol0 t := fol_subst (fun n => 
+                             match n with 
+                               | 0 => £0 
+                               | _ => £ (1+n) 
+                             end) (fot_fol t).
+
+  Definition fot_fol1 t := fol_subst (fun n => 
+                             match n with 
+                               | 0 => £1 
+                               | _ => £ (1+n) 
+                             end) (fot_fol t).
+
+  Fact fot_fol0_sem t φ x y : ⟪ fot_fol0 t ⟫' (φ↑y↑x) <-> ⟦t⟧ φ = x.
+  Proof.
+    unfold fot_fol0; simpl.
+    rewrite fol_sem_subst.
+    rewrite <- fot_fol_sem.
+    apply fol_sem_ext.
+    intros [ | [ | n ] ]; simpl; rew fot; simpl; auto.
+  Qed.
+
+  Fact fot_fol1_sem t φ x y : ⟪ fot_fol1 t ⟫' (φ↑y↑x) <-> ⟦t⟧ φ = y.
+  Proof.
+    unfold fot_fol1; simpl.
+    rewrite fol_sem_subst.
+    rewrite <- fot_fol_sem.
+    apply fol_sem_ext.
+    intros [ | [ | n ] ]; simpl; rew fot; simpl; auto.
+  Qed.
+
+  Fixpoint fol_fol (A : fol_form Σpcp) : fol_form Σ2.
+  Proof.
+    destruct A as [ | r v | b A B | q A ].
+    + apply fol_false.
+    + simpl ar_rels at 1 in v.
+      exact (∃ (∃ (fol_atom Σ2 (inr r) (£0##£1##ø) ⟑ fot_fol0 (vec_head v) ⟑ fot_fol1 (vec_head (vec_tail v))))).
+    + apply (fol_bin b (fol_fol A) (fol_fol B)).
+    + apply (fol_quant q (fol_fol A)).
+  Defined.
+
+  (** The encoding is faithfull on the models *)
+
+  Theorem fol_fol_sem A φ : ⟪fol_fol A⟫' φ <-> ⟪A⟫ φ.
+  Proof.
+    revert φ; induction A as [ | r v | b A HA B HB | q A HA ]; intro phi; simpl; try tauto.
+    + vec split v with x; vec split v with y; vec nil v; clear v; simpl.
+      split.
+      * intros (u & v & H1 & H2 & H3); revert H1 H2 H3.
+        rewrite fot_fol0_sem, fot_fol1_sem; intros; subst; auto.
+      * intros H.
+        exists (fot_sem M phi y), (fot_sem M phi x); msplit 2; simpl; rew fot; simpl; auto.
+        - rewrite fot_fol0_sem; auto.
+        - rewrite fot_fol1_sem; auto.
+    + apply fol_bin_sem_equiv; auto.
+    + apply fol_quant_sem_equiv; auto.
+  Qed. 
+ 
+End Σbpcp_Σ2.
+
+Section Σ2_Σbpcp.
+
+End Σ2_Σbpcp. 
+
+(** A reduction from SAT(Σbpcp) to SAT(Σ2) when eq is interpreted with identity 
     
+    Question: if we axiomatize congruence for eq and add it to the encoding,
+              can we get the reduction w/o assuming interpreted identity
 
+*)
 
+Check fol_fol_sem.
+
+Definition Σ3 : fo_signature.
+Proof.
+  exists Empty_set unit.
+  + intros [].
+  + exact (fun _ => 3).
+Defined.
