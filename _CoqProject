@@ -20,6 +20,8 @@ wf_finite.v
 false_elim.v
 itl.v
 
+ack_inv.v
+
 halve.v
 merge.v
 mergesort.v
@@ -33,6 +35,7 @@ c_eps.v
 nm.v
 
 fo_terms.v
+hfs.v
 
 co_ind.v
 

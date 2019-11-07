@@ -19,6 +19,14 @@ Section wf_chains.
     | in_chain_0 : forall x, chain 0 x x
     | in_chain_1 : forall n x y z, R x y -> chain n y z -> chain (S n) x z.
 
+  Hint Constructors chain.
+
+  Fact chain_inv_0 x y : chain 0 x y -> x = y.
+  Proof. inversion 1; auto. Qed.
+
+  Fact chain_inv_S n x y : chain (S n) x y -> exists z, R x z /\ chain n z y.
+  Proof. inversion 1; exists y0; auto. Qed.
+
   Fact chain_plus a b x y z : chain a x y -> chain b y z -> chain (a+b) x z.
   Proof.
     induction 1 as [ | ? ? y ].
@@ -35,8 +43,31 @@ Section wf_chains.
     replace (S n) with (n+1) by lia.
     apply chain_plus with y; auto.
     constructor 2 with z; auto.
-    constructor 1.
   Qed.
+
+  Fact chain_plus_inv a b x z : chain (a+b) x z -> exists y, chain a x y /\ chain b y z.
+  Proof.
+    revert x; induction a as [ | a IHa ]; intros x; simpl.
+    + exists x; split; auto.
+    + intros H.
+      apply chain_inv_S in H.
+      destruct H as (y & H1 & H2).
+      specialize (IHa _ H2).
+      destruct IHa as (k & ? & ?).
+      exists k; split; auto.
+      constructor 2 with y; auto.
+  Qed.
+ 
+  Fact chain_snoc_inv n x z : chain (S n) x z -> exists y, chain n x y /\ R y z.
+  Proof.
+    replace (S n) with (n+1) by lia.
+    intros H; apply chain_plus_inv in H.
+    destruct H as (y & H1 & H2).
+    exists y; split; auto.
+    apply chain_inv_S in H2.
+    destruct H2 as (k & H2 & H3).
+    apply chain_inv_0 in H3; subst; auto.
+  Qed. 
 
   Inductive chain_list : list X -> X -> X -> Prop :=
     | in_chain_list_0 : forall x, chain_list nil x x
