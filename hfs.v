@@ -7,7 +7,7 @@
 (*         CeCILL v2 FREE SOFTWARE LICENSE AGREEMENT          *)
 (**************************************************************)
 
-Require Import List Arith Eqdep_dec Lia Bool Max Wellfounded.
+Require Import List Arith Eqdep_dec Lia Bool Max Wellfounded Nat.
 
 Require Import acc_irr measure_ind wf_finite wf_chains.
 
@@ -15,9 +15,24 @@ Set Implicit Arguments.
 
 Section btree.
 
-  Reserved Notation "⌞ x ⌟" (at level 0).
-  Reserved Notation "x ∙ y"  (at level 2, right associativity).
-  Reserved Notation "x ⪧ y" (at level 2, right associativity).
+  (* Unary ops *)
+
+  Reserved Notation "⌞ x ⌟" (at level 0, format "⌞ x ⌟").
+  Reserved Notation "↓ x"   (at level 1, format "↓ x").
+  Reserved Notation "x †"   (at level 1, format "x †").
+
+  Reserved Notation "⟬ s , t ⟭" (at level 1, format "⟬ s , t ⟭").
+
+  (* Infix Binary ops *)
+ 
+  Reserved Notation "x ∙ y"  (at level 2, right associativity, format "x ∙ y").
+  Reserved Notation "x ⪧ y" (at level 2, right associativity, format "x ⪧ y").
+  Reserved Notation "x → y" (at level 2, right associativity, format "x → y").
+
+  Reserved Notation "x ∪ y" (at level 61, left associativity).
+
+  (* Infix Binary rels *)
+
   Reserved Notation "x ≈ y" (at level 70, no associativity).
   Reserved Notation "x ≉ y" (at level 70, no associativity).
   Reserved Notation "x ≾ y" (at level 70, no associativity).
@@ -25,9 +40,8 @@ Section btree.
   Reserved Notation "x ∉ y" (at level 70, no associativity).
   Reserved Notation "x ⋷ y" (at level 70, no associativity).
   Reserved Notation "x ≺ y" (at level 70, no associativity).
-  Reserved Notation "x ∪ y" (at level 61, left associativity).
 
-  (* ⌞ ⌟ ∅ ⪧ ≈ ≉ ∈ ∉ ⋷  ≾ ≺ ε ∙*)
+  (* ⌞ ⌟ ∅ ⪧ ≈ ≉ ∈ ∉ ⋷  ≾ ≺ ε ∙ ∊ *)
 
   Inductive bt : Set := bt_leaf | bt_node : bt -> bt -> bt.
 
@@ -71,6 +85,8 @@ Section btree.
 
   Print bt_depth.
 
+  Check (fun x => ⌞x⌟).
+
   (* ⌞ ⌟ ∅ ⪧ ≈ *)
 
   Inductive bt_equiv : bt -> bt -> Prop :=
@@ -87,6 +103,8 @@ Section btree.
                                    ->   s⪧t ≈ s'⪧t'
   where "s ≈ t" := (bt_equiv s t).
 
+  Notation "s ≉ t" := (~ s ≈ t).
+
   Notation bte_refl := in_bte_refl.
   Notation bte_trans := in_bte_tran.
  
@@ -94,8 +112,6 @@ Section btree.
 
   Fact bte_sym x y : x ≈ y <-> y ≈ x.
   Proof. split; auto. Qed.
-
-  Notation "s ≉ t" := (~ s ≈ t).
 
   Fact bte_leaf_eq s t : s ≈ t -> (s = ∅ <-> t = ∅).
   Proof. induction 1; try tauto; split; discriminate. Qed.
@@ -114,6 +130,8 @@ Section btree.
     + intros ->; auto.
   Qed.
 
+  (* s belongs to t if adding s to t does not change t *)
+
   Notation "s ∈ t" := (s⪧t ≈ t).
   Notation "s ∉ t" := (~ s ∈ t).
 
@@ -121,10 +139,11 @@ Section btree.
 
   Section establishing_membership_inversion.
 
+    (* A restricted definition of membership, not up to equivalence *)
+
     Inductive bt_restr_mem : bt -> bt -> Prop :=
-      | in_btrm_0 : forall s t,    s ⋷ s⪧t
-      | in_btrm_1 : forall s t u,  s ⋷ u
-                               ->  s ⋷ t⪧u
+      | in_btrm_0 : forall s t,            s ⋷ s⪧t
+      | in_btrm_1 : forall s t u, s ⋷ u -> s ⋷ t⪧u
     where "s ⋷ t" := (bt_restr_mem s t).
 
     Hint Constructors bt_restr_mem.
@@ -222,55 +241,27 @@ Section btree.
 
     Hint Constructors bt_lt.
 
-    Fact bt_lt_inv s t : s ≺ t -> s = ∅ /\ (exists u v, t = u⪧v)
-                               \/ (exists u u' v v', s = u⪧v /\ t = u'⪧v' /\ u ≺ u')
-                               \/ (exists u v v', s = u⪧v /\ t = u⪧v' /\ v ≺ v').
-    Proof.
-      destruct 1.
-      + left; split; auto; exists s, t; auto.
-      + right; left; exists s, s', t, t'; auto.
-      + do 2 right; exists s, t, t'; auto.
-    Qed.
-
-    Fact bt_lt_node_inv s t u : s⪧t ≺ u -> (exists s' t', u = s'⪧t' /\ s ≺ s')
-                                        \/ (exists t', u = s⪧t' /\ t ≺ t').
-    Proof. 
-      inversion 1.
-      + left; exists s', t'; auto.
-      + right; exists t'; auto.
-    Qed.
-
     Fact bt_lt_irrefl s : ~ s ≺ s.
     Proof.
       intros H.
-      assert (forall t, s ≺ t -> s <> t) as D; [ | apply D in H; destruct H; auto ].
-      clear H; induction 1 as [ s t | s s' t H IH | s t t' H IH ]; try discriminate.
-      all: contradict IH; inversion IH; auto.
+      assert (forall t, s ≺ t -> s <> t) as D; 
+        [ | apply D in H; destruct H; auto ].
+      clear H; induction 1 as [ s t | s s' t t' H IH | s t t' H IH ]; 
+        try discriminate; contradict IH; inversion IH; auto.
     Qed.
 
     Fact bt_lt_trans r s t : r ≺ s -> s ≺ t -> r ≺ t.
     Proof.
       intros H1; revert H1 t.
-      induction 1 as [ s t | s s' t t' H IH | s t t' H IH ]; intros u.
-      + inversion 1; auto.
-      + intros H1; apply bt_lt_node_inv in H1.
-        destruct H1 as [ (v & w & -> & ?) | (v & -> & ?) ];
-          constructor; auto.
-      + intros H1; apply bt_lt_node_inv in H1.
-        destruct H1 as [ (v & w & -> & ?) | (v & -> & ?) ].
-        * constructor; auto.
-        * constructor 3; auto.
+      induction 1; inversion 1; auto.
     Qed.
   
     Fact bt_lt_eq_lt_dec s t : { s ≺ t } + { s = t } + { t ≺ s }.
     Proof.
       revert t; induction s as [ | s1 H1 s2 H2 ] using bt_rect; intros [ | t1 t2 ]; auto.
-      destruct (H1 t1) as [ [ H3 | H3 ] | H3 ]; auto.
-      subst; destruct (H2 t2) as [ [] | ]; subst; auto.
+      destruct (H1 t1) as [ [] | ]; auto;
+        destruct (H2 t2) as [ [] | ]; subst; auto.
     Qed.
-
-    Reserved Notation "x †" (at level 1).
-    Reserved Notation "x → y" (at level 3, right associativity).
 
     Fixpoint bt_insert s t : bt :=
       match t with
@@ -406,7 +397,7 @@ Section btree.
 
   End establishing_decidability.
 
-  Corollary btm_dec s t : { s ∈ t } + { ~ s ∈ t }.
+  Corollary btm_dec s t : { s ∈ t } + { s ∉ t }.
   Proof. apply bte_dec. Qed.
 
   Section more_decidability.
@@ -414,6 +405,8 @@ Section btree.
     Section btm_ex_dec.
   
       Variable (P : bt -> Prop) (HP : forall s t, s ≈ t -> P s -> P t).
+
+      (** Exist. quantification over subsets *)
 
       Theorem btm_ex_dec t : (forall x, x ∈ t -> { P x } + { ~ P x })
                        -> { s | s ∈ t /\ P s } + { forall s, s ∈ t -> ~ P s }.
@@ -432,6 +425,8 @@ Section btree.
 
     End btm_ex_dec.
 
+    (** Univ. quantification of subsets *)
+
     Corollary btm_fa_dec (P : _ -> Prop) t : 
                              (forall s t, s ≈ t -> P s -> P t)
                           -> (forall x, x ∈ t -> { P x } + { ~ P x })
@@ -445,6 +440,8 @@ Section btree.
       + right; intros s Hs; specialize (H _ Hs).
         destruct (H2 _ Hs); tauto.
     Qed.
+
+    (** Decidable separation *)
 
     Definition btm_select (P : _ -> Prop) t :
                              (forall s t, s ≈ t -> P s -> P t)
@@ -467,8 +464,10 @@ Section btree.
             intros ([H1|H1] & H2); split; auto.
             contradict H; revert H2; apply HP0; auto.
     Qed.
+
+    (** When x ∈ s, one can compute t st s = {x} U t /\ x ∉ t *)
   
-    Definition btm_partition x s : x ∈ s -> { t | s ≈ x⪧t /\ ~ x ∈ t }.
+    Definition btm_partition x s : x ∈ s -> { t | s ≈ x⪧t /\ x ∉ t }.
     Proof.
       induction s as [ | y s IHs ] using bt_rect'.
       + intros H; exfalso; revert H; rewrite btm_inv_0; intros [].
@@ -496,6 +495,8 @@ Section btree.
 
     Opaque max.
 
+    (** Well-foundness *)
+
     Fact bte_depth_eq s t : s ≈ t -> ⌞s⌟ = ⌞t⌟.
     Proof.
       induction 1; simpl; auto.
@@ -512,7 +513,7 @@ Section btree.
       apply le_max_l.
     Qed.
 
-    (** bt is well-founded for membership *)
+    (** bt is well-founded for ∈ *)
 
     Theorem btm_wf : well_founded (fun s t => s ∈ t).
     Proof.
@@ -633,19 +634,13 @@ Section btree.
   Proof. intros H1 H2 k Hx; apply H2, H1; auto. Qed.
 
   Fact bti_comp s t : t ⊆ s⪧t.
-  Proof.
-    intros x; rewrite btm_inv; auto.
-  Qed.
+  Proof. intro; rewrite btm_inv; auto. Qed.
 
   Fact bti_mono_r x s t : s ⊆ t -> x⪧s ⊆ x⪧t.
-  Proof.
-    intros H z; do 2 rewrite btm_inv; intros []; auto.
-  Qed.
+  Proof. intros ? ?; do 2 rewrite btm_inv; intros []; auto. Qed.
 
   Fact bte_bti s t : s ≈ t -> s ⊆ t.
-  Proof.
-    intros H x; apply btm_congr_r; auto.
-  Qed.
+  Proof. intros ? ?; apply btm_congr_r; auto. Qed.
 
   Fact btm_bti x s : x ∈ s -> x⪧s ⊆ s.
   Proof. intro; apply bte_bti; auto. Qed.
@@ -664,7 +659,7 @@ Section btree.
 
   Hint Resolve bti_refl bti_comp bti_mono_r.
 
-  Fact bti_dec s t : { s ⊆ t } + { ~ s ⊆ t }.
+  Lemma bti_dec s t : { s ⊆ t } + { ~ s ⊆ t }.
   Proof.
     destruct btm_fa_dec with (P := fun x => x ∈ t) (t := s)
       as [ (x & H1 & H2) | H1 ]; auto.
@@ -672,7 +667,10 @@ Section btree.
     + intros ? ?; apply btm_dec.
   Qed.
 
-  Fact bti_equiv s t : s ⊆ t -> t ⊆ s -> s ≈ t.
+  (* I wonder whether the proof of this important result could
+     be split *)
+
+  Lemma bti_equiv s t : s ⊆ t -> t ⊆ s -> s ≈ t.
   Proof.
     revert t; induction s as [ | x s Hs ] using bt_rect'.
     + intros t _ Ht.
@@ -711,7 +709,7 @@ Section btree.
   Fact bte_incl_equiv s t : s ≈ t <-> s ⊆ t /\ t ⊆ s.
   Proof.
     split.
-    + intros H; split; apply bte_bti; auto.
+    + intro; split; apply bte_bti; auto.
     + intros []; apply bti_equiv; auto.
   Qed.
 
@@ -745,6 +743,8 @@ Section btree.
         apply bti_congr_r with (1 := H2) in Hz; auto.
         revert Hz; do 2 rewrite btm_inv; intros []; auto.
   Qed.
+
+  (** Set union *)
 
   Fixpoint bt_cup s t := 
     match s with 
@@ -781,23 +781,10 @@ Section btree.
     + intros H; split; apply bti_trans with (2 := H); auto.
     + intros [] z; rewrite bt_cup_spec; intros []; auto.
   Qed.
-
-  Fact bt_sg_inv x y : x⪧∅ ≈ y⪧∅ <-> x ≈ y.
-  Proof.
-    split; auto.
-    rewrite bte_ext.
-    intros H; specialize (H x).
-    do 2 rewrite btm_inv, btm_inv_0 in H.
-    apply proj1 in H; destruct H; try tauto; auto.
-  Qed.
-
-
    
   (** We compute the transitive closure *)
 
   Definition bt_transitive t := forall u v, u ∈ v -> v ∈ t -> u ∈ t.
-
-  Reserved Notation "↓ x" (at level 1).
 
   Fixpoint bt_tc t := 
     match t with 
@@ -943,6 +930,8 @@ Section btree.
 
   *)
 
+  (** Computes x {t1,...,tk} => {{x} ∪ t1,...,{x} ∪ tk **)
+
   Fixpoint bt_mcomp x t :=
     match t with
       | ∅   => ∅ 
@@ -997,6 +986,15 @@ Section btree.
 
   (** We start workin with pairs *)
 
+  Fact bt_sg_inv x y : x⪧∅ ≈ y⪧∅ <-> x ≈ y.
+  Proof.
+    split; auto.
+    rewrite bte_ext.
+    intros H; specialize (H x).
+    do 2 rewrite btm_inv, btm_inv_0 in H.
+    apply proj1 in H; destruct H; try tauto; auto.
+  Qed.
+
   Fact bt_sg_db_inv a x y : a⪧∅ ≈ x⪧y⪧∅ <-> a ≈ x /\ a ≈ y.
   Proof.
     split.
@@ -1032,7 +1030,7 @@ Section btree.
 
   Definition bt_pair s t := (s⪧∅)⪧(s⪧t⪧∅)⪧∅.
 
-  Notation "⟬ s , t ⟭" := (bt_pair s t) (at level 1).
+  Notation "⟬ s , t ⟭" := (bt_pair s t).
 
   Fact bt_pair_spec x s t : x ∈ ⟬ s,t⟭ <-> x ≈ s⪧∅ \/ x ≈ s⪧t⪧∅.
   Proof. 
@@ -1075,25 +1073,25 @@ Section btree.
 
   Fact bt_enc_empty s : s ≈ ∅ <-> forall x, ~ x ∈ s.
   Proof.
-    rewrite bte_ext; apply forall_equiv; intros x.
+    rewrite bte_ext; apply forall_equiv; intro.
     rewrite btm_inv_0; tauto.
   Qed.
 
   Fact bt_enc_sg s t : s ≈ t⪧∅ <-> forall x, x ∈ s <-> x ≈ t.
   Proof.
-    rewrite bte_ext; apply forall_equiv; intros x.
+    rewrite bte_ext; apply forall_equiv; intro.
     rewrite btm_inv, btm_inv_0; tauto.
   Qed.
 
   Fact bt_enc_db u s t : u ≈ s⪧t⪧∅ <-> forall x, x ∈ u <-> x ≈ s \/ x ≈ t.
   Proof.
-    rewrite bte_ext; apply forall_equiv; intros x.
+    rewrite bte_ext; apply forall_equiv; intros.
     rewrite btm_inv, btm_inv, btm_inv_0; tauto.
   Qed.
  
   Fact bt_enc_pair p s t : p ≈ ⟬s,t⟭  <-> (forall x, x ∈ p <-> x ≈ s⪧∅ \/ x ≈ s⪧t⪧∅).
   Proof.
-    rewrite bte_ext; apply forall_equiv; intros x.
+    rewrite bte_ext; apply forall_equiv; intro.
     rewrite bt_pair_spec; tauto.
   Qed.
 
@@ -1192,6 +1190,7 @@ Section btree.
 
   End HF_struct.
 
+  Check btm_depth.
   Check btm_finite_t.
   Print bt_transitive.
   Check bt_tc_trans.
